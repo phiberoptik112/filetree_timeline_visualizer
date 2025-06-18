@@ -1,0 +1,6 @@
+[submodule "file_tree_timeline"]
+	path = file_tree_timeline
+	url = https://github.com/phiberoptik112/file_tree_timeline
+[submodule "milestone_email_generator"]
+	path = milestone_email_generator
+	url = https://github.com/phiberoptik112/milestone_email_generator.git
