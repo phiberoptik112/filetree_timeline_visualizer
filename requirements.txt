@@ -1,0 +1,29 @@
+# Unified Timeline Visualizer Requirements
+
+# Core Python libraries (usually included with Python)
+# pathlib
+# sqlite3
+# mimetypes
+# hashlib
+# argparse
+# json
+# re
+# datetime
+# typing
+# dataclasses
+# email
+
+# Email processing (optional but recommended)
+extract-msg>=0.41.0
+
+# Natural language processing (optional but recommended)
+nltk>=3.7
+textblob>=0.17.1
+
+# Optional: Enhanced document processing
+# python-docx>=0.8.11
+# PyPDF2>=3.0.1
+
+# Optional: Advanced NLP
+# spacy>=3.4.4
+# transformers>=4.24.0

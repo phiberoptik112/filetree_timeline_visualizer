@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Tree Timeline Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+            color: white;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #threejs-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            min-width: 300px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            min-width: 250px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .hover-panel {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 15px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 300px;
+        }
+
+        .timeline-controls {
+            margin-bottom: 20px;
+        }
+
+        .timeline-slider {
+            width: 100%;
+            margin: 15px 0;
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+        }
+
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .timeline-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn.active {
+            background: #4CAF50;
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.5);
+        }
+
+        .info-item {
+            margin: 10px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .info-label {
+            font-size: 12px;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-value {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 3px;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 18px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            color: #ff6b6b;
+            padding: 10px;
+            background: rgba(255, 107, 107, 0.1);
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+
+        .color-box {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            border-radius: 3px;
+        }
+
+        .legend-category {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 10px 0 5px 0;
+            opacity: 0.7;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 5px;
+        }
+
+        .legend-category:first-child {
+            margin-top: 0;
+        }
+
+        .details-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 18px 22px;
+            min-width: 260px;
+            max-width: 350px;
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.2);
+            font-size: 15px;
+            z-index: 10;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.25);
+            transition: opacity 0.3s;
+        }
+        .details-panel .details-title {
+            font-weight: bold;
+            font-size: 17px;
+            margin-bottom: 8px;
+        }
+        .details-panel .details-label {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 6px;
+        }
+        .details-panel .details-value {
+            font-size: 15px;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="threejs-container"></div>
+        
+        <div class="control-panel">
+            <h3>Data Source</h3>
+            <div class="data-source-controls" style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-size: 14px;">
+                    Select JSON file:
+                    <input type="file" id="fileInput" accept=".json" style="display: block; margin-top: 5px; padding: 5px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; background: rgba(255,255,255,0.1); color: white; width: 100%;">
+                </label>
+                <div style="margin-top: 10px; font-size: 12px; opacity: 0.7;">
+                    Or use default: <span id="currentFile">file_tree_data.json</span>
+                </div>
+            </div>
+            <h3>Timeline Controls</h3>
+            <div class="timeline-controls">
+                <input type="range" id="timelineSlider" class="timeline-slider" 
+                       min="0" max="0" value="0" step="1">
+                <div class="control-buttons">
+                    <button class="btn" id="playBtn">Play</button>
+                    <button class="btn" id="pauseBtn">Pause</button>
+                    <button class="btn" id="resetBtn">Reset</button>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Current Scan</div>
+                    <div class="info-value" id="currentScan">1 of 1</div>
+                </div>
+            </div>
+            <div class="sunburst-controls" style="margin-top:20px;">
+                <label style="display:block; margin-bottom:8px;">Min Angle (deg):
+                    <input type="range" id="minAngleSlider" min="1" max="50" value="1">
+                    <span id="minAngleValue">1</span>
+                </label>
+                <label style="display:block; margin-bottom:8px;">Ring Thickness:
+                    <input type="range" id="ringThicknessSlider" min="2" max="50" value="3">
+                    <span id="ringThicknessValue">3</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h3>Scan Information</h3>
+            <div class="info-item">
+                <div class="info-label">Timestamp</div>
+                <div class="info-value" id="scanTimestamp">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Total Files</div>
+                <div class="info-value" id="totalFiles">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Total Size</div>
+                <div class="info-value" id="totalSize">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Scan Duration</div>
+                <div class="info-value" id="scanDuration">-</div>
+            </div>
+        </div>
+
+        <div class="details-panel" id="detailsPanel">
+            <div id="detailsContent">Hover over a file or folder to see details.</div>
+        </div>
+
+        <div class="legend">
+            <h4>File Types</h4>
+            <div id="legendContent"></div>
+        </div>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="spinner"></div>
+            <div>Loading file tree data...</div>
+        </div>
+    </div>
+
+    <script>
+        class FileTreeVisualizer {
+            
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.controls = null;
+                this.data = null;
+                this.currentScanIndex = 0;
+                this.isPlaying = false;
+                this.playInterval = null;
+                this.sunburstGroup = null;
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+                this.hoveredObject = null;
+                // Sunburst display parameters
+                this.minAngleDeg = 1;
+                this.ringThickness = 2.5;
+                this.ringGap = 1.5;
+                // Maps for highlighting
+                this.segmentMeshes = new Map(); // node -> mesh
+                this.connectionLinesByChild = new Map(); // node -> line
+                // Color mapping for file types
+                this.colorMap = {
+                    // Programming languages
+                    'text/javascript': '#f7df1e',  // JavaScript
+                    'application/javascript': '#f7df1e',
+                    'text/x-python': '#5c37ab',  // Python
+                    'text/html': '#e34c26',  // HTML
+                    'text/css': '#15b6b1',  // CSS
+                    'application/json': '#000000',  // JSON
+                    'text/markdown': '#083fa1',  // Markdown
+                    
+                    // Documents
+                    'application/pdf': '#ff0000',  // PDF
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '#217346',  // Word
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '#3c6f1d',  // Excel
+                    'application/vnd.ms-outlook': '#d48300',  // Outlook
+                    'application/vnd.ms-outlook.msg': '#d48300',  // Outlook MSG
+                    'message/rfc822': '#d48300',  // Email messages
+                    
+                    // Media
+                    'image/': '#ff6b6b',  // Images
+                    'video/': '#9b59b6',  // Video
+                    'audio/': '#3498db',  // Audio
+                    
+                    // Archives
+                    'application/zip': '#e67e22',  // ZIP
+                    'application/x-rar-compressed': '#e67e22',  // RAR
+                    'application/x-7z-compressed': '#e67e22',  // 7Z
+                    'application/x-tar': '#e67e22',  // TAR
+                    'application/gzip': '#e67e22',  // GZIP
+                    
+                    // Other
+                    'text/': '#95a5a6',  // Text files
+                    'folder': '#a73a81',  // Folders
+                    'default': '#bdc3c7'  // Default gray
+                };
+
+                // Initialize color cache
+                this.colorCache = new Map();
+                
+                this.init();
+                this.loadData();
+            }
+
+            init() {
+                this.setupScene();
+                this.setupLighting();
+                this.setupCamera();
+                this.setupRenderer();
+                this.setupControls();
+                this.setupEventListeners();
+                this.updateLegend();
+                this.animate();
+            }
+
+            setupScene() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x0a0a0a);
+                this.scene.fog = new THREE.Fog(0x0a0a0a, 50, 200);
+            }
+
+            setupLighting() {
+                const ambientLight = new THREE.AmbientLight(0x404040, 1.0);
+                this.scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 1.8);
+                directionalLight.position.set(10, 10, 10);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 2048;
+                directionalLight.shadow.mapSize.height = 2048;
+                this.scene.add(directionalLight);
+
+                const pointLight = new THREE.PointLight(0x4CAF50, 0.8, 300);
+                pointLight.position.set(0, 0, 30);
+                this.scene.add(pointLight);
+            }
+
+            setupCamera() {
+                const container = document.getElementById('threejs-container');
+                this.camera = new THREE.PerspectiveCamera(
+                    75, 
+                    container.clientWidth / container.clientHeight, 
+                    0.1, 
+                    1000
+                );
+                this.camera.position.set(0, 0, 50);
+
+            }
+
+            setupRenderer() {
+                const container = document.getElementById('threejs-container');
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                container.appendChild(this.renderer.domElement);
+            }
+
+            setupControls() {
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+                this.controls.enableZoom = true;
+                this.controls.autoRotate = false;
+                this.controls.autoRotateSpeed = 0.5;
+            }
+
+            setupEventListeners() {
+                window.addEventListener('resize', () => this.onWindowResize());
+                this.renderer.domElement.addEventListener('mousemove', (event) => this.onMouseMove(event));
+                this.renderer.domElement.addEventListener('mouseleave', () => this.hideHoverPanel());
+
+                document.getElementById('playBtn').addEventListener('click', () => this.play());
+                document.getElementById('pauseBtn').addEventListener('click', () => this.pause());
+                document.getElementById('resetBtn').addEventListener('click', () => this.reset());
+                document.getElementById('timelineSlider').addEventListener('input', (e) => {
+                    this.setCurrentScan(parseInt(e.target.value));
+                });
+                // Sunburst controls
+                const minAngleSlider = document.getElementById('minAngleSlider');
+                const minAngleValue = document.getElementById('minAngleValue');
+                minAngleSlider.addEventListener('input', (e) => {
+                    this.minAngleDeg = parseInt(e.target.value);
+                    minAngleValue.textContent = this.minAngleDeg;
+                    this.updateVisualization();
+                });
+                const ringThicknessSlider = document.getElementById('ringThicknessSlider');
+                const ringThicknessValue = document.getElementById('ringThicknessValue');
+                ringThicknessSlider.addEventListener('input', (e) => {
+                    this.ringThickness = parseInt(e.target.value);
+                    ringThicknessValue.textContent = this.ringThickness;
+                    this.updateVisualization();
+                });
+                
+                // File input handler
+                document.getElementById('fileInput').addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        this.loadCustomFile(file);
+                    }
+                });
+            }
+
+            async loadData(fileName = 'file_tree_data.json') {
+                try {
+                    this.showLoading(`Loading ${fileName}...`);
+                    const response = await fetch(fileName);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    this.data = await response.json();
+                    this.validateData();
+                    this.initializeTimeline();
+                    this.hideLoading();
+                    document.getElementById('currentFile').textContent = fileName;
+                } catch (error) {
+                    this.showError(`Failed to load ${fileName}: ${error.message}`);
+                }
+            }
+
+            async loadCustomFile(file) {
+                try {
+                    this.showLoading(`Loading ${file.name}...`);
+                    const text = await file.text();
+                    this.data = JSON.parse(text);
+                    this.validateData();
+                    this.initializeTimeline();
+                    this.hideLoading();
+                    document.getElementById('currentFile').textContent = file.name;
+                } catch (error) {
+                    this.showError(`Failed to load ${file.name}: ${error.message}`);
+                }
+            }
+
+            validateData() {
+                if (!this.data) {
+                    throw new Error('No data found in file');
+                }
+                if (!this.data.timeline || !Array.isArray(this.data.timeline)) {
+                    throw new Error('Invalid data format: timeline array not found');
+                }
+                if (this.data.timeline.length === 0) {
+                    throw new Error('No timeline data found');
+                }
+                // Validate each timeline entry has required fields
+                for (let i = 0; i < this.data.timeline.length; i++) {
+                    const entry = this.data.timeline[i];
+                    if (!entry.tree_data) {
+                        throw new Error(`Timeline entry ${i + 1} missing tree_data`);
+                    }
+                    if (!entry.timestamp) {
+                        throw new Error(`Timeline entry ${i + 1} missing timestamp`);
+                    }
+                }
+            }
+
+            initializeTimeline() {
+                if (!this.data || !this.data.timeline || this.data.timeline.length === 0) {
+                    this.showError('No timeline data available');
+                    return;
+                }
+
+                const slider = document.getElementById('timelineSlider');
+                slider.max = this.data.timeline.length - 1;
+                slider.value = 0;
+                
+                this.currentScanIndex = 0;
+                this.updateVisualization();
+                this.updateInfo();
+            }
+
+            getColorForNode(node) {
+                // Check cache first
+                if (this.colorCache.has(node)) {
+                    return this.colorCache.get(node);
+                }
+
+                let color;
+                if (node.type === 'folder') {
+                    color = this.colorMap['folder'];
+                } else {
+                    const mimeType = node.mime_type;
+                    if (!mimeType) {
+                        color = this.colorMap['default'];
+                    } else {
+                        // 1. Exact match
+                        if (this.colorMap[mimeType]) {
+                            color = this.colorMap[mimeType];
+                        } else {
+                            // 2. Check file extension for common types
+                            const extension = node.name.split('.').pop().toLowerCase();
+                            const extensionMap = {
+                                'msg': this.colorMap['application/vnd.ms-outlook.msg'],
+                                'eml': this.colorMap['message/rfc822'],
+                                'zip': this.colorMap['application/zip'],
+                                'rar': this.colorMap['application/x-rar-compressed'],
+                                '7z': this.colorMap['application/x-7z-compressed'],
+                                'tar': this.colorMap['application/x-tar'],
+                                'gz': this.colorMap['application/gzip'],
+                                'pdf': this.colorMap['application/pdf'],
+                                'docx': this.colorMap['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+                                'xlsx': this.colorMap['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+                                'doc': this.colorMap['application/vnd.ms-outlook'],
+                                'txt': this.colorMap['text/'],
+                                'md': this.colorMap['text/markdown']
+                            };
+                            if (extensionMap[extension]) {
+                                color = extensionMap[extension];
+                            } else {
+                                // 3. Prefix match (e.g., image/, text/)
+                                let found = false;
+                                for (const [pattern, patternColor] of Object.entries(this.colorMap)) {
+                                    if (pattern.endsWith('/') && mimeType.startsWith(pattern)) {
+                                        color = patternColor;
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found) {
+                                    color = this.colorMap['default'];
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Always prefix with #
+                if (typeof color === 'string' && !color.startsWith('#')) {
+                    color = `#${color}`;
+                }
+
+                // Cache the color
+                this.colorCache.set(node, color);
+                return color;
+            }
+            
+            createSunburst(treeData, scanIndex) {
+                const group = new THREE.Group();
+                const minAngleRad = this.minAngleDeg * Math.PI / 180;
+                const ringThickness = this.ringThickness;
+                const ringGap = this.ringGap;
+                
+                // Clear color cache when creating new sunburst
+                this.colorCache.clear();
+                
+                // Maps for highlighting
+                this.segmentMeshes = new Map(); // node -> mesh
+                this.connectionLinesByChild = new Map(); // node -> line
+
+                // Helper to get the center point of a segment at a given radius and angle
+                const getSegmentCenter = (innerRadius, outerRadius, startAngle, endAngle, z) => {
+                    const angle = (startAngle + endAngle) / 2;
+                    const radius = (innerRadius + outerRadius) / 2;
+                    return new THREE.Vector3(
+                        Math.cos(angle) * radius,
+                        Math.sin(angle) * radius,
+                        z
+                    );
+                };
+
+                const createRingSegment = (node, innerRadius, outerRadius, startAngle, endAngle, depth, colorOverride = null) => {
+                    const segments = 64;
+                    const geometry = new THREE.RingGeometry(
+                        innerRadius,
+                        outerRadius,
+                        segments,
+                        1,
+                        startAngle,
+                        endAngle - startAngle
+                    );
+                    
+                    // Get the color for this node, always with #
+                    let baseColor = colorOverride || this.getColorForNode(node);
+                    if (typeof baseColor === 'string' && !baseColor.startsWith('#')) {
+                        baseColor = `#${baseColor}`;
+                    }
+                    const color = new THREE.Color(baseColor);
+                    const material = new THREE.MeshLambertMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.8
+                    });
+                    
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.z = depth * 2 - scanIndex * 10;
+                    mesh.receiveShadow = true;
+                    mesh.castShadow = true;
+                    
+                    // Store all necessary data in userData, always with #
+                    mesh.userData = { 
+                        node, 
+                        scanIndex, 
+                        depth, 
+                        innerRadius, 
+                        outerRadius, 
+                        startAngle, 
+                        endAngle,
+                        baseColor: baseColor,
+                        originalColor: baseColor
+                    };
+                    
+                    return mesh;
+                };
+
+                const buildSunburst = (node, innerRadius, outerRadius, startAngle, endAngle, depth = 0, siblingIndex = 0, siblingCount = 1, parentInfo = null, parentNode = null) => {
+                    node.parent = parentNode;
+                    
+                    // Get the base color for this node
+                    let baseColor = this.getColorForNode(node);
+                    
+                    // Apply sibling color variation if needed
+                    if (node.type === 'file' && siblingCount > 1) {
+                        const hsl = {};
+                        new THREE.Color(baseColor).getHSL(hsl);
+                        hsl.l = 0.45 + 0.2 * (siblingIndex / (siblingCount - 1));
+                        const color = new THREE.Color();
+                        color.setHSL(hsl.h, hsl.s, hsl.l);
+                        baseColor = color.getHexString();
+                    }
+                    
+                    // Create the segment with the determined color
+                    const mesh = createRingSegment(node, innerRadius, outerRadius, startAngle, endAngle, depth, baseColor);
+                    group.add(mesh);
+                    this.segmentMeshes.set(node, mesh);
+                    
+                    // Draw connection line if parentInfo is provided
+                    if (parentInfo) {
+                        const parentCenter = getSegmentCenter(
+                            parentInfo.innerRadius, parentInfo.outerRadius, parentInfo.startAngle, parentInfo.endAngle, (depth - 1) * 2 - scanIndex * 10
+                        );
+                        const childCenter = getSegmentCenter(
+                            innerRadius, outerRadius, startAngle, endAngle, depth * 2 - scanIndex * 10
+                        );
+                        // Control point for curve (midway, slightly outward for smoothness)
+                        const midRadius = (parentInfo.outerRadius + innerRadius) / 2 + ringGap * 0.5;
+                        const midAngle = (parentInfo.endAngle + startAngle) / 2;
+                        const controlPoint = new THREE.Vector3(
+                            Math.cos(midAngle) * midRadius,
+                            Math.sin(midAngle) * midRadius,
+                            (parentCenter.z + childCenter.z) / 2
+                        );
+                        const curve = new THREE.QuadraticBezierCurve3(parentCenter, controlPoint, childCenter);
+                        const points = curve.getPoints(32);
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.3, transparent: true }));
+                        group.add(line);
+                        line.userData = {
+                            type: 'connection',
+                            parentNode: parentInfo.node,
+                            childNode: node
+                        };
+                        this.connectionLines = this.connectionLines || [];
+                        this.connectionLines.push(line);
+                        this.connectionLinesByChild.set(node, line);
+                    }
+                    
+                    // Process children if they exist
+                    if (node.children && node.children.length > 0) {
+                        const n = node.children.length;
+                        const totalSize = node.children.reduce((sum, child) => sum + (child.size || 1), 0);
+                        const totalMinAngle = n * minAngleRad;
+                        const availableAngle = Math.max(0, (endAngle - startAngle) - totalMinAngle);
+                        let currentAngle = startAngle;
+                        
+                        node.children.forEach((child, i) => {
+                            const childSize = child.size || 1;
+                            const angleSpan = minAngleRad + (availableAngle * (childSize / totalSize));
+                            const childEndAngle = currentAngle + angleSpan;
+                            
+                            buildSunburst(
+                                child,
+                                outerRadius + ringGap,
+                                outerRadius + ringGap + ringThickness,
+                                currentAngle,
+                                childEndAngle,
+                                depth + 1,
+                                i,
+                                n,
+                                { innerRadius, outerRadius, startAngle, endAngle, node },
+                                node
+                            );
+                            
+                            currentAngle = childEndAngle;
+                        });
+                    }
+                };
+                buildSunburst(treeData, 2, 2 + ringThickness, 0, Math.PI * 2);
+                return group;
+            }
+
+            updateVisualization() {
+                if (!this.data || !this.data.timeline) return;
+
+                console.log('[UpdateViz] Clearing color cache and updating visualization');
+                // Clear color cache when updating visualization
+                this.colorCache.clear();
+
+                if (this.sunburstGroup) {
+                    this.scene.remove(this.sunburstGroup);
+                }
+
+                const currentScan = this.data.timeline[this.currentScanIndex];
+                this.sunburstGroup = this.createSunburst(currentScan.tree_data, this.currentScanIndex);
+                this.scene.add(this.sunburstGroup);
+
+                document.getElementById('currentScan').textContent = 
+                    `${this.currentScanIndex + 1} of ${this.data.timeline.length}`;
+            }
+
+            updateInfo() {
+                if (!this.data || !this.data.timeline) return;
+
+                const currentScan = this.data.timeline[this.currentScanIndex];
+                
+                document.getElementById('scanTimestamp').textContent = 
+                    new Date(currentScan.timestamp).toLocaleString();
+                document.getElementById('totalFiles').textContent = 
+                    currentScan.total_files.toLocaleString();
+                document.getElementById('totalSize').textContent = 
+                    this.formatBytes(currentScan.total_size);
+                document.getElementById('scanDuration').textContent = 
+                    `${currentScan.scan_duration.toFixed(2)}s`;
+            }
+
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            onMouseMove(event) {
+                const rect = this.renderer.domElement.getBoundingClientRect();
+                this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                // Create a small buffer zone for better hover detection
+                const bufferZone = 0.02; // Adjust this value to control sensitivity
+                const mouseBuffer = {
+                    x: this.mouse.x,
+                    y: this.mouse.y
+                };
+
+                // Check multiple points around the mouse position
+                const checkPoints = [
+                    mouseBuffer,
+                    { x: mouseBuffer.x + bufferZone, y: mouseBuffer.y },
+                    { x: mouseBuffer.x - bufferZone, y: mouseBuffer.y },
+                    { x: mouseBuffer.x, y: mouseBuffer.y + bufferZone },
+                    { x: mouseBuffer.x, y: mouseBuffer.y - bufferZone }
+                ];
+
+                let intersected = null;
+                let minDistance = Infinity;
+
+                // Check each point for intersections
+                for (const point of checkPoints) {
+                    this.raycaster.setFromCamera(point, this.camera);
+                    const intersects = this.raycaster.intersectObjects(
+                        [...this.scene.children, ...(this.connectionLines || [])], 
+                        true
+                    );
+
+                    if (intersects.length > 0) {
+                        const distance = intersects[0].distance;
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            intersected = intersects[0].object;
+                        }
+                    }
+                }
+
+                // Revert all previously highlighted objects
+                if (!this.highlightedObjects) this.highlightedObjects = new Set();
+                this.highlightedObjects.forEach(obj => {
+                    // Revert segments
+                    if (obj.isMesh) {
+                        let originalColor = obj.userData.originalColor;
+                        if (typeof originalColor === 'string' && !originalColor.startsWith('#')) {
+                            originalColor = `#${originalColor}`;
+                        }
+                        if (originalColor) {
+                            obj.material.color.set(originalColor);
+                        }
+                        obj.material.opacity = 0.8;
+                    }
+                    // Revert lines
+                    if (obj.isLine) {
+                        obj.material.color.set(0xffffff);
+                        obj.material.opacity = 0.3;
+                    }
+                });
+                this.highlightedObjects.clear();
+
+                if (intersected) {
+                    // Highlight path if hovering a segment
+                    if (intersected.userData && intersected.userData.node) {
+                        let node = intersected.userData.node;
+                        while (node) {
+                            // Highlight segment
+                            const mesh = this.segmentMeshes.get(node);
+                            if (mesh) {
+                                // Store current color if not already stored
+                                if (!mesh.userData.originalColor) {
+                                    let currentColor = mesh.material.color.getHexString();
+                                    if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                        currentColor = `#${currentColor}`;
+                                    }
+                                    mesh.userData.originalColor = currentColor;
+                                }
+                                mesh.material.color.set('#00ff66');
+                                mesh.material.opacity = 1.0;
+                                this.highlightedObjects.add(mesh);
+                            }
+                            // Highlight connection line from parent to node
+                            const line = this.connectionLinesByChild.get(node);
+                            if (line) {
+                                line.material.color.set('#00ff66');
+                                line.material.opacity = 1.0;
+                                this.highlightedObjects.add(line);
+                            }
+                            node = node.parent;
+                        }
+                        this.showDetailsPanel(intersected.userData.node);
+                        this.hoveredObject = intersected;
+                    } else if (intersected.userData && intersected.userData.type === 'connection') {
+                        // If hovering a connection line, highlight it and its child/parent segments
+                        const line = intersected;
+                        line.material.color.set('#00ff66');
+                        line.material.opacity = 1.0;
+                        this.highlightedObjects.add(line);
+                        
+                        // Highlight child and parent segments
+                        const childMesh = this.segmentMeshes.get(line.userData.childNode);
+                        if (childMesh) {
+                            if (!childMesh.userData.originalColor) {
+                                let currentColor = childMesh.material.color.getHexString();
+                                if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                    currentColor = `#${currentColor}`;
+                                }
+                                childMesh.userData.originalColor = currentColor;
+                            }
+                            childMesh.material.color.set('#00ff66');
+                            childMesh.material.opacity = 1.0;
+                            this.highlightedObjects.add(childMesh);
+                        }
+                        const parentMesh = this.segmentMeshes.get(line.userData.parentNode);
+                        if (parentMesh) {
+                            if (!parentMesh.userData.originalColor) {
+                                let currentColor = parentMesh.material.color.getHexString();
+                                if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                    currentColor = `#${currentColor}`;
+                                }
+                                parentMesh.userData.originalColor = currentColor;
+                            }
+                            parentMesh.material.color.set('#00ff66');
+                            parentMesh.material.opacity = 1.0;
+                            this.highlightedObjects.add(parentMesh);
+                        }
+                        this.showDetailsPanel(null); // Clear details for lines
+                    }
+                } else {
+                    this.showDetailsPanel(null);
+                    this.hoveredObject = null;
+                }
+            }
+
+            showDetailsPanel(node) {
+                const panel = document.getElementById('detailsPanel');
+                const content = document.getElementById('detailsContent');
+                if (!node) {
+                    content.innerHTML = 'Hover over a file or folder to see details.';
+                    return;
+                }
+
+                // Get the color for this node type
+                const color = this.getColorForNode(node);
+                const colorBox = `<div style="display: inline-block; width: 12px; height: 12px; background-color: ${color}; margin-right: 8px; border-radius: 2px;"></div>`;
+
+                let html = `
+                    <div class='details-title'>
+                        ${colorBox}${node.name}
+                    </div>`;
+
+                // Common properties for both files and folders
+                html += `
+                    <div class='details-label'>Type</div>
+                    <div class='details-value'>${node.type.charAt(0).toUpperCase() + node.type.slice(1)}</div>
+                    <div class='details-label'>Size</div>
+                    <div class='details-value'>${this.formatBytes(node.size)}</div>`;
+
+                if (node.type === 'file') {
+                    // File-specific properties
+                    const mimeType = node.mime_type || 'Unknown';
+                    const fileExtension = node.name.split('.').pop().toUpperCase();
+                    
+                    html += `
+                        <div class='details-label'>File Type</div>
+                        <div class='details-value'>${fileExtension} (${mimeType})</div>
+                        <div class='details-label'>Hash</div>
+                        <div class='details-value' style="font-family: monospace; font-size: 12px;">${node.file_hash || 'N/A'}</div>`;
+                } else {
+                    // Folder-specific properties
+                    html += `
+                        <div class='details-label'>Contents</div>
+                        <div class='details-value'>${node.file_count || 0} files</div>
+                        <div class='details-label'>Last Modified</div>
+                        <div class='details-value'>${node.modified_time ? new Date(node.modified_time).toLocaleString() : 'N/A'}</div>`;
+                }
+
+                // Add path information if available
+                if (node.path) {
+                    html += `
+                        <div class='details-label'>Path</div>
+                        <div class='details-value' style="font-family: monospace; font-size: 12px; word-break: break-all;">${node.path}</div>`;
+                }
+
+                content.innerHTML = html;
+            }
+
+            hideHoverPanel() {
+                // No-op: hover panel is not used anymore
+            }
+
+            play() {
+                if (this.isPlaying) return;
+                
+                this.isPlaying = true;
+                document.getElementById('playBtn').classList.add('active');
+                
+                this.playInterval = setInterval(() => {
+                    if (this.currentScanIndex < this.data.timeline.length - 1) {
+                        this.setCurrentScan(this.currentScanIndex + 1);
+                    } else {
+                        this.pause();
+                    }
+                }, 2000);
+            }
+
+            pause() {
+                this.isPlaying = false;
+                document.getElementById('playBtn').classList.remove('active');
+                
+                if (this.playInterval) {
+                    clearInterval(this.playInterval);
+                    this.playInterval = null;
+                }
+            }
+
+            reset() {
+                this.pause();
+                this.setCurrentScan(0);
+            }
+
+            setCurrentScan(index) {
+                if (!this.data || index < 0 || index >= this.data.timeline.length) return;
+                
+                this.currentScanIndex = index;
+                document.getElementById('timelineSlider').value = index;
+                this.updateVisualization();
+                this.updateInfo();
+            }
+
+            onWindowResize() {
+                const container = document.getElementById('threejs-container');
+                this.camera.aspect = container.clientWidth / container.clientHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            showLoading(message = 'Loading file tree data...') {
+                const loading = document.getElementById('loadingIndicator');
+                loading.style.display = 'block';
+                loading.innerHTML = `
+                    <div class="spinner"></div>
+                    <div>${message}</div>
+                `;
+            }
+
+            hideLoading() {
+                document.getElementById('loadingIndicator').style.display = 'none';
+            }
+
+            showError(message) {
+                const loading = document.getElementById('loadingIndicator');
+                loading.style.display = 'block';
+                loading.innerHTML = `<div class="error">Error: ${message}</div>`;
+            }
+
+            updateLegend() {
+                const legendContent = document.getElementById('legendContent');
+                const categories = {
+                    'Programming': ['text/javascript', 'text/x-python', 'text/html', 'text/css', 'application/json', 'text/markdown'],
+                    'Documents': ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-outlook'],
+                    'Media': ['image/', 'video/', 'audio/'],
+                    'Other': ['text/', 'folder', 'default']
+                };
+
+                let html = '';
+                for (const [category, types] of Object.entries(categories)) {
+                    html += `<div class="legend-category">${category}</div>`;
+                    types.forEach(type => {
+                        const color = this.colorMap[type];
+                        const label = type.split('/').pop().replace('application/vnd.', '').replace('openxmlformats-officedocument.', '')
+                            .replace('wordprocessingml.document', 'Word')
+                            .replace('spreadsheetml.sheet', 'Excel')
+                            .replace('ms-outlook', 'Outlook')
+                            .replace('x-python', 'Python')
+                            .replace('javascript', 'JavaScript')
+                            .replace('html', 'HTML')
+                            .replace('css', 'CSS')
+                            .replace('json', 'JSON')
+                            .replace('markdown', 'Markdown')
+                            .replace('pdf', 'PDF')
+                            .replace('image', 'Images')
+                            .replace('video', 'Video')
+                            .replace('audio', 'Audio')
+                            .replace('text', 'Text Files')
+                            .replace('folder', 'Folders')
+                            .replace('default', 'Other Files');
+                        
+                        html += `
+                            <div class="legend-item">
+                                <div class="color-box" style="background-color: ${color};"></div>
+                                <span>${label}</span>
+                            </div>
+                        `;
+                    });
+                }
+                legendContent.innerHTML = html;
+            }
+        }
+
+        // Initialize the visualizer when the page loads
+        window.addEventListener('load', () => {
+            new FileTreeVisualizer();
+        });
+    </script>
+</body>
+</html>
