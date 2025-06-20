@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: filetree-timeline
+  labels:
+    name: filetree-timeline
+    app: filetree-timeline-visualizer
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: filetree-timeline-system
+  labels:
+    name: filetree-timeline-system
+    app: filetree-timeline-visualizer 

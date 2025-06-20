@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: unified-backend-service
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: unified-backend
+spec:
+  selector:
+    app: filetree-timeline-visualizer
+    component: unified-backend
+  ports:
+  - name: http
+    port: 5000
+    targetPort: 5000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: frontend
+spec:
+  selector:
+    app: filetree-timeline-visualizer
+    component: frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: file-scanner-service
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: file-scanner
+spec:
+  selector:
+    app: filetree-timeline-visualizer
+    component: file-scanner
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP 

@@ -848,6 +848,75 @@ class UnifiedTimelineGenerator:
         
         return export_data
 
+    def extract_milestones_from_documents(self, doc_directory: str) -> List[TimelineEvent]:
+        """Extract milestone events from project documents."""
+        milestone_events = []
+        doc_path = Path(doc_directory)
+
+        if not doc_path.exists():
+            print(f"Document directory does not exist: {doc_directory}")
+            return milestone_events
+
+        # Support various document formats
+        for pattern in ['*.txt', '*.md', '*.rst']:
+            for doc_file in doc_path.glob(pattern):
+                try:
+                    with open(doc_file, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                        milestones = self._extract_milestones_from_text_content(content, str(doc_file))
+                        # Convert milestones to timeline events
+                        for milestone in milestones:
+                            event = TimelineEvent(
+                                event_id=f"milestone_{milestone.id}",
+                                timestamp=milestone.timestamp,
+                                event_type='milestone',
+                                metadata=asdict(milestone)
+                            )
+                            milestone_events.append(event)
+                except Exception as e:
+                    print(f"Error processing {doc_file}: {e}")
+        
+        print(f"Extracted {len(milestone_events)} milestone events from documents")
+        return milestone_events
+
+    def _extract_milestones_from_text_content(self, text: str, source_id: str) -> List[Milestone]:
+        """Extract milestones from plain text content (e.g., from documents)."""
+        milestones = []
+        
+        # Look for structured formats like TODO, FIXME, NOTE
+        structured_patterns = {
+            'requirement': [r'TODO:\s*(.{10,200})', r'REQUIREMENT:\s*(.{10,200})'],
+            'issue': [r'FIXME:\s*(.{10,200})', r'BUG:\s*(.{10,200})'],
+            'deliverable': [r'DONE:\s*(.{10,200})', r'COMPLETED:\s*(.{10,200})']
+        }
+        
+        timestamp = datetime.now().timestamp()
+        
+        for category, patterns in structured_patterns.items():
+            for pattern in patterns:
+                matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
+                for match in matches:
+                    milestone_text = match.group(1).strip()
+                    
+                    milestone = Milestone(
+                        id=f"doc_{abs(hash(source_id + milestone_text))}",
+                        timestamp=timestamp,
+                        title=self._generate_milestone_title(category, milestone_text),
+                        description=milestone_text,
+                        category=category,
+                        priority='medium',
+                        participants=[],
+                        source='document',
+                        source_id=source_id,
+                        status='pending',
+                        related_files=self._extract_file_references(text),
+                        confidence=0.8
+                    )
+                    
+                    milestones.append(milestone)
+        
+        return milestones
+
 
 def main():
     """CLI interface for the unified timeline generator"""
@@ -861,6 +930,10 @@ def main():
     parser.add_argument(
         "--email-dir", 
         help="Directory containing email files for milestone extraction"
+    )
+    parser.add_argument(
+        "--docs-dir",
+        help="Directory containing project document files for milestone extraction"
     )
     parser.add_argument(
         "--output", "-o",
@@ -896,8 +969,16 @@ def main():
             milestone_events = generator.extract_milestones_from_emails(args.email_dir)
             all_events.extend(milestone_events)
         
+        # Extract milestones from documents if provided
+        if args.docs_dir:
+            print(f"Extracting milestones from documents in: {args.docs_dir}")
+            doc_milestone_events = generator.extract_milestones_from_documents(args.docs_dir)
+            all_events.extend(doc_milestone_events)
+        
         # Store events
         if all_events:
+            # Sort events by timestamp before storing and processing
+            all_events.sort(key=lambda x: x.timestamp)
             generator.store_events(all_events)
             
             # Analyze correlations if requested
@@ -907,7 +988,7 @@ def main():
             # Export unified timeline
             generator.export_unified_timeline(args.output)
         else:
-            print("No events generated. Please specify --scan-dir or --email-dir")
+            print("No events generated. Please specify --scan-dir, --email-dir, or --docs-dir")
             
     except Exception as e:
         print(f"Error: {e}")

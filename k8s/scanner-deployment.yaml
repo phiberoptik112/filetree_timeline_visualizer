@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-scanner
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: file-scanner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: filetree-timeline-visualizer
+      component: file-scanner
+  template:
+    metadata:
+      labels:
+        app: filetree-timeline-visualizer
+        component: file-scanner
+    spec:
+      containers:
+      - name: file-scanner
+        image: filetree-timeline/scanner:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: SCANNER_IGNORE_PATTERNS
+          valueFrom:
+            configMapKeyRef:
+              name: filetree-timeline-config
+              key: SCANNER_IGNORE_PATTERNS
+        - name: SCANNER_MAX_DEPTH
+          valueFrom:
+            configMapKeyRef:
+              name: filetree-timeline-config
+              key: SCANNER_MAX_DEPTH
+        - name: SCANNER_MAX_FILE_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: filetree-timeline-config
+              key: SCANNER_MAX_FILE_SIZE
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: filetree-timeline-config
+              key: LOG_LEVEL
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+        - name: scan-source
+          mountPath: /scan-source
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        command:
+        - python
+        - scanner.py
+        - /scan-source
+        - --output
+        - /data/file_tree_data.json
+        - --format
+        - json
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: filetree-timeline-data-pvc
+      - name: scan-source
+        hostPath:
+          path: /tmp/sample-project
+          type: Directory
+      restartPolicy: Always 

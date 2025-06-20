@@ -5,15 +5,20 @@ services:
     build: ./backend
     volumes:
       - shared-data:/shared
-      - ./sample-data:/data.ro 
-    command: python scanner.py /data --output /shared/file_tree_data.json
+      - /Users/jakepfitsch/Documents/sample_project_databaseWork/Project_1_Acoustic_Design/:/data.root
+    command: python scanner.py /data.root --output /shared/file_tree_data.json
 
   backend:
     build:
-      context: ./file-tree-timeline/backend
+      context: ./file_tree_timeline/backend
       dockerfile: Dockerfile
     ports:
       - "5000:5000"
     volumes:
-      - ./file-tree-timeline/backend/data:/data
-      - ./file-tree-timeline/backend/shared:/shared
+      - shared-data:/shared
+      - /Users/jakepfitsch/Documents/sample_project_databaseWork/Project_1_Acoustic_Design/:/data.root
+    command: python backend.py /data.root --output /shared/file_tree_data.json
+
+volumes:
+  shared-data:
+    driver: local

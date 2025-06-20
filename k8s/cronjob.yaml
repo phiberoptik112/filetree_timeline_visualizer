@@ -1,0 +1,144 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: filetree-timeline-scanner
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: scanner-cronjob
+spec:
+  schedule: "0 */6 * * *"  # Run every 6 hours
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: filetree-timeline-visualizer
+            component: scanner-cronjob
+        spec:
+          containers:
+          - name: scanner-job
+            image: filetree-timeline/scanner:latest
+            imagePullPolicy: IfNotPresent
+            env:
+            - name: SCANNER_IGNORE_PATTERNS
+              valueFrom:
+                configMapKeyRef:
+                  name: filetree-timeline-config
+                  key: SCANNER_IGNORE_PATTERNS
+            - name: SCANNER_MAX_DEPTH
+              valueFrom:
+                configMapKeyRef:
+                  name: filetree-timeline-config
+                  key: SCANNER_MAX_DEPTH
+            - name: SCANNER_MAX_FILE_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: filetree-timeline-config
+                  key: SCANNER_MAX_FILE_SIZE
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: filetree-timeline-config
+                  key: LOG_LEVEL
+            volumeMounts:
+            - name: data-volume
+              mountPath: /data
+            - name: scan-source
+              mountPath: /scan-source
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+            command:
+            - python
+            - scanner.py
+            - /scan-source
+            - --output
+            - /data/file_tree_data_$(date +%Y%m%d_%H%M%S).json
+            - --format
+            - json
+          volumes:
+          - name: data-volume
+            persistentVolumeClaim:
+              claimName: filetree-timeline-data-pvc
+          - name: scan-source
+            hostPath:
+              path: /tmp/sample-project
+              type: Directory
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: filetree-timeline-backup
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: backup-cronjob
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: filetree-timeline-visualizer
+            component: backup-cronjob
+        spec:
+          containers:
+          - name: backup-job
+            image: filetree-timeline/backup:latest
+            imagePullPolicy: IfNotPresent
+            env:
+            - name: DB_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: filetree-timeline-config
+                  key: DB_PATH
+            - name: DB_BACKUP_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: filetree-timeline-config
+                  key: DB_BACKUP_PATH
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: filetree-timeline-config
+                  key: LOG_LEVEL
+            volumeMounts:
+            - name: data-volume
+              mountPath: /data
+            - name: backup-volume
+              mountPath: /data/backups
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "100m"
+            command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting backup at $(date)"
+              cp /data/unified_timeline.db /data/backups/unified_timeline_$(date +%Y%m%d_%H%M%S).db
+              echo "Backup completed at $(date)"
+          volumes:
+          - name: data-volume
+            persistentVolumeClaim:
+              claimName: filetree-timeline-data-pvc
+          - name: backup-volume
+            persistentVolumeClaim:
+              claimName: filetree-timeline-backup-pvc
+          restartPolicy: OnFailure 

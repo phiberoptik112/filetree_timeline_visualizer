@@ -1,0 +1,144 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: filetree-timeline-network-policy
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+spec:
+  podSelector:
+    matchLabels:
+      app: filetree-timeline-visualizer
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow frontend to receive traffic from ingress
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 80
+  # Allow backend to receive traffic from frontend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: filetree-timeline-visualizer
+          component: frontend
+    ports:
+    - protocol: TCP
+      port: 5000
+  # Allow scanner to communicate with backend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: filetree-timeline-visualizer
+          component: file-scanner
+    ports:
+    - protocol: TCP
+      port: 5000
+  egress:
+  # Allow all pods to make DNS queries
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow backend to access external APIs (if needed)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-network-policy
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: filetree-timeline-visualizer
+      component: frontend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow frontend to receive traffic from ingress
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 80
+  egress:
+  # Allow frontend to communicate with backend
+  - to:
+    - podSelector:
+        matchLabels:
+          app: filetree-timeline-visualizer
+          component: unified-backend
+    ports:
+    - protocol: TCP
+      port: 5000
+  # Allow DNS queries
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: unified-backend
+spec:
+  podSelector:
+    matchLabels:
+      app: filetree-timeline-visualizer
+      component: unified-backend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow backend to receive traffic from frontend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: filetree-timeline-visualizer
+          component: frontend
+    ports:
+    - protocol: TCP
+      port: 5000
+  # Allow backend to receive traffic from scanner
+  - from:
+    - podSelector:
+        matchLabels:
+          app: filetree-timeline-visualizer
+          component: file-scanner
+    ports:
+    - protocol: TCP
+      port: 5000
+  egress:
+  # Allow backend to access external APIs (if needed)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+  # Allow DNS queries
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53 

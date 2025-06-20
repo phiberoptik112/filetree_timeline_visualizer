@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filetree-timeline-sa
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filetree-timeline-scanner-sa
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: scanner
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filetree-timeline-backup-sa
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: backup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: filetree-timeline-role
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "persistentvolumeclaims", "events", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies", "ingresses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: filetree-timeline-scanner-role
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: scanner
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "persistentvolumeclaims", "events"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: filetree-timeline-backup-role
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: backup
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "persistentvolumeclaims", "events"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: filetree-timeline-rolebinding
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+subjects:
+- kind: ServiceAccount
+  name: filetree-timeline-sa
+  namespace: filetree-timeline
+roleRef:
+  kind: Role
+  name: filetree-timeline-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: filetree-timeline-scanner-rolebinding
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: scanner
+subjects:
+- kind: ServiceAccount
+  name: filetree-timeline-scanner-sa
+  namespace: filetree-timeline
+roleRef:
+  kind: Role
+  name: filetree-timeline-scanner-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: filetree-timeline-backup-rolebinding
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+    component: backup
+subjects:
+- kind: ServiceAccount
+  name: filetree-timeline-backup-sa
+  namespace: filetree-timeline
+roleRef:
+  kind: Role
+  name: filetree-timeline-backup-role
+  apiGroup: rbac.authorization.k8s.io 

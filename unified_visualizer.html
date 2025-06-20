@@ -421,6 +421,26 @@
                     <button id="reset-camera" class="control-button secondary">Reset Camera</button>
                 </div>
             </div>
+
+            <!-- Generation Controls -->
+            <div class="control-section">
+                <h4>Generate Timeline</h4>
+                <p style="font-size: 12px; opacity: 0.7; margin-bottom: 10px;">
+                    Enter local paths to your project folders to generate a command. Run the command in your terminal, then load the generated `unified_timeline.json` file above.
+                </p>
+                <label for="scan-dir-input" style="font-size: 12px; margin-bottom: 4px; display: block;">Project Folder Path:</label>
+                <input type="text" id="scan-dir-input" placeholder="/path/to/project_root" style="width: 100%; padding: 5px; margin-bottom: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: white;">
+                
+                <label for="email-dir-input" style="font-size: 12px; margin-bottom: 4px; display: block;">Email Folder Path:</label>
+                <input type="text" id="email-dir-input" placeholder="/path/to/emails" style="width: 100%; padding: 5px; margin-bottom: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: white;">
+
+                <label for="docs-dir-input" style="font-size: 12px; margin-bottom: 4px; display: block;">Documents Folder Path:</label>
+                <input type="text" id="docs-dir-input" placeholder="/path/to/documents" style="width: 100%; padding: 5px; margin-bottom: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: white;">
+
+                <button id="generate-cmd-btn" class="control-button">Generate Command</button>
+                
+                <textarea id="generated-cmd-output" rows="4" style="width: 100%; margin-top: 15px; background: #0f1419; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: #4CAF50; font-family: monospace; font-size: 11px; display: none; padding: 8px;"></textarea>
+            </div>
         </div>
 
         <div id="info-panel" class="panel hidden">
@@ -640,6 +660,9 @@
                         this.loadCustomDbFile(file);
                     }
                 });
+
+                // Command generator
+                document.getElementById('generate-cmd-btn').addEventListener('click', () => this.generateBackendCommand());
             }
 
             setupSunburstControls() {
@@ -707,6 +730,33 @@
                     document.getElementById('db-file-error').textContent = 'Failed to load file.';
                     document.getElementById('db-file-error').style.display = 'block';
                 }
+            }
+
+            generateBackendCommand() {
+                const scanDir = document.getElementById('scan-dir-input').value.trim();
+                const emailDir = document.getElementById('email-dir-input').value.trim();
+                const docsDir = document.getElementById('docs-dir-input').value.trim();
+                const outputArea = document.getElementById('generated-cmd-output');
+
+                let command = 'python unified_backend.py';
+                if (scanDir) {
+                    command += ` --scan-dir "${scanDir}"`;
+                }
+                if (emailDir) {
+                    command += ` --email-dir "${emailDir}"`;
+                }
+                if (docsDir) {
+                    command += ` --docs-dir "${docsDir}"`;
+                }
+                command += ' --correlate --output unified_timeline.json';
+
+                if (!scanDir && !emailDir && !docsDir) {
+                    outputArea.value = 'Please provide at least one directory path.';
+                } else {
+                    outputArea.value = command;
+                }
+                
+                outputArea.style.display = 'block';
             }
 
             generateSampleData() {
