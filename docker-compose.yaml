@@ -1,23 +1,23 @@
 version: '3.8'
 
 services:
-  scanner:
-    build: ./backend
-    volumes:
-      - shared-data:/shared
-      - /Users/jakepfitsch/Documents/sample_project_databaseWork/Project_1_Acoustic_Design/:/data.root
-    command: python scanner.py /data.root --output /shared/file_tree_data.json
-
   backend:
     build:
-      context: ./file_tree_timeline/backend
-      dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
+      context: .
+      dockerfile: Dockerfile.backend
     volumes:
       - shared-data:/shared
-      - /Users/jakepfitsch/Documents/sample_project_databaseWork/Project_1_Acoustic_Design/:/data.root
-    command: python backend.py /data.root --output /shared/file_tree_data.json
+      - /Users/jakepfitsch/Documents/sample_project_databaseWork/Project_1_Acoustic_Design/:/data
+    command: python unified_backend.py --scan-dir /data/ --email-dir /data/email_db --docs-dir /data/deliverables_db --output /shared/unified_timeline.json --correlate
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8080:80"
+    volumes:
+      - shared-data:/usr/share/nginx/html
 
 volumes:
   shared-data:

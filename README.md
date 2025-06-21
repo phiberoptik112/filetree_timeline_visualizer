@@ -1,41 +1,66 @@
 # Unified Timeline Visualizer
 
-A powerful tool that combines file system scanning with milestone extraction from email communications to create comprehensive project timeline visualizations.
+A powerful tool that combines file system scanning with milestone extraction from communications and documents to create comprehensive project timeline visualizations.
 
 ## Features
 
-- **Unified Timeline Generation**: Combines file tree scanning and email milestone extraction
-- **Interactive 3D Visualization**: Sunburst charts for file trees with 3D Gantt bars for milestones
-- **Correlation Analysis**: Links file changes with milestone events based on temporal proximity and file mentions
-- **Email Processing**: Supports multiple email formats (.msg, .eml, .txt)
-- **SQLite Database**: Persistent storage of events and correlations
+- **Unified Timeline Generation**: Combines file system scanning with milestone extraction from emails and documents.
+- **Interactive 3D Visualization**: Sunburst charts for file trees with 3D Gantt bars for milestones.
+- **Integrated Command Generator**: UI to help generate the necessary command for data processing.
+- **Correlation Analysis**: Links file changes with milestone events based on temporal proximity and file mentions.
+- **Multi-Source Processing**: Supports multiple email formats (`.msg`, `.eml`, `.txt`) and document formats (`.md`, `.txt`).
+- **SQLite Database**: Persistent storage for all timeline events and their correlations.
 
-## Installation
+## Usage Workflow
 
-1. Clone the repository
-2. Install required dependencies:
+This project uses a two-step process to visualize your data:
+
+1.  **Generate Data**: Run the Python backend script (`unified_backend.py`) to scan your project folders and extract milestones. This creates a `unified_timeline.json` file.
+2.  **Visualize Data**: Open `unified_visualizer.html` in your browser and load the `unified_timeline.json` file to see the interactive visualization.
+
+### Step 1: Generate the Timeline Data
+
+The easiest way to generate the data is to use the integrated command generator.
+
+1.  Start a local web server in the project's root directory:
+    ```bash
+    python -m http.server 8080
+    ```
+2.  Open `http://localhost:8080/unified_visualizer.html` in your browser.
+3.  In the **Controls** panel, find the **Generate Timeline** section.
+4.  Enter the local paths to your project, email, and/or document folders.
+5.  Click **Generate Command**.
+6.  Copy the generated command and run it in your terminal. This will create the `unified_timeline.json` file.
+
+#### Manual Command Generation
+
+You can also construct the command manually. Here is a full example:
+
 ```bash
-pip install extract-msg nltk textblob
+# Generate a unified timeline from a project folder, emails, and documents
+python unified_backend.py \
+    --scan-dir path/to/your/project_folder \
+    --email-dir path/to/your/email_folder \
+    --docs-dir path/to/your/documents_folder \
+    --output unified_timeline.json \
+    --correlate
 ```
 
-## Usage
+**Arguments:**
 
-### Basic Usage
+*   `--scan-dir`: (Optional) Path to the project directory to scan.
+*   `--email-dir`: (Optional) Path to the directory containing email files.
+*   `--docs-dir`: (Optional) Path to the directory containing document files.
+*   `--output`: (Optional) Name of the output JSON file.
+*   `--correlate`: (Optional) Flag to enable correlation analysis.
 
-```bash
-# Generate unified timeline with correlations
-python unified_backend.py --scan-dir path/to/project --email-dir path/to/emails --output unified_timeline.json --correlate
+### Step 2: View the Visualization
 
-# Serve visualization
-python -m http.server 8080
-# Then open http://localhost:8080/unified_visualizer.html
-```
-
-### Example with Sample Data
-
-```bash
-python unified_backend.py --scan-dir file-tree-timeline/sample_data/example_project --email-dir file-tree-timeline/sample_data/24-004_exampleprojectfolder/Emails --correlate
-```
+1.  Make sure your local server from Step 1 is still running.
+2.  Go to `http://localhost:8080/unified_visualizer.html`.
+3.  In the **Controls** panel, find the **Data Source** section.
+4.  Click the file input and select the `unified_timeline.json` file you generated.
+5.  The visualization will load with your data.
 
 ## Key Features
 

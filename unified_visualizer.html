@@ -585,7 +585,7 @@
                     60, 
                     window.innerWidth / window.innerHeight, 
                     1, 
-                    1000
+                    20000
                 );
                 this.camera.position.set(100, 100, 200);
                 this.camera.lookAt(0, 0, 0);
@@ -964,6 +964,7 @@
                 this.updateInfo();
                 this.updateGanttChart();
                 this.updateLegend();
+                this.resetCamera();
             }
 
             createVisualization() {
@@ -1555,9 +1556,12 @@
             }
 
             resetCamera() {
+                const numEvents = (this.data && this.data.events) ? this.data.events.length : 1;
+                const timelineLength = (numEvents - 1) * this.zSpacing;
+                
                 this.camera.position.set(100, 100, 200);
-                this.camera.lookAt(0, 0, 0);
-                this.controls.target.set(0, 0, 0);
+                this.controls.target.set(0, 0, -timelineLength / 2);
+                this.camera.lookAt(this.controls.target);
                 this.controls.update();
             }
 
