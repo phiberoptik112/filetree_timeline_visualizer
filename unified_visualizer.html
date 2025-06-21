@@ -391,6 +391,7 @@
                     <button class="control-button" id="play-btn">▶ Play</button>
                     <button class="control-button" id="pause-btn">⏸ Pause</button>
                     <button class="control-button" id="reset-btn">⏮ Reset</button>
+                    <button class="control-button" id="jump-to-filescan-btn">📁 File Scans</button>
                 </div>
             </div>
 
@@ -547,6 +548,9 @@
                     'application/json': 0x000000,
                     'text/markdown': 0x083fa1,
                     'application/pdf': 0xff0000,
+                    'text/plain': 0x9e9e9e,
+                    'text/csv': 0x2ecc71,
+                    'application/octet-stream': 0x95a5a6,
                     'folder': 0x4CAF50,
                     'default': 0x9e9e9e
                 };
@@ -643,6 +647,7 @@
                 document.getElementById('play-btn').addEventListener('click', () => this.play());
                 document.getElementById('pause-btn').addEventListener('click', () => this.pause());
                 document.getElementById('reset-btn').addEventListener('click', () => this.reset());
+                document.getElementById('jump-to-filescan-btn').addEventListener('click', () => this.jumpToFileScan());
 
                 // Sunburst controls
                 this.setupSunburstControls();
@@ -693,14 +698,23 @@
 
             async loadData() {
                 try {
+                    console.log('Loading data from:', this.currentDbFile);
                     const response = await fetch(this.currentDbFile);
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
                     this.data = await response.json();
+                    console.log('Data loaded successfully:', {
+                        hasData: !!this.data,
+                        hasEvents: !!(this.data && this.data.events),
+                        eventCount: this.data && this.data.events ? this.data.events.length : 0,
+                        eventTypes: this.data && this.data.metadata ? this.data.metadata.event_types : {},
+                        fileScanCount: this.data && this.data.events ? this.data.events.filter(e => e.event_type === 'file_scan').length : 0
+                    });
                     document.getElementById('current-db-file').textContent = this.currentDbFile;
                     this.initializeTimeline();
                 } catch (error) {
+                    console.error('Error loading data:', error);
                     this.showError(`Failed to load data: ${error.message}`);
                     // Only generate sample data if not user-initiated
                     if (!this.userLoadedFile) {
@@ -950,6 +964,12 @@
             }
 
             initializeTimeline() {
+                console.log('Initializing timeline with data:', {
+                    hasData: !!this.data,
+                    hasEvents: !!(this.data && this.data.events),
+                    eventCount: this.data && this.data.events ? this.data.events.length : 0
+                });
+                
                 if (!this.data || !this.data.events || this.data.events.length === 0) {
                     this.showError('No timeline data available');
                     return;
@@ -957,9 +977,12 @@
 
                 const slider = document.getElementById('timeline-slider');
                 slider.max = this.data.events.length - 1;
-                slider.value = 0;
                 
-                this.currentEventIndex = 0;
+                // Start at the end to show all events including file_scan events
+                this.currentEventIndex = this.data.events.length - 1;
+                slider.value = this.currentEventIndex;
+                
+                console.log('Timeline initialized, calling updateVisualization');
                 this.updateVisualization();
                 this.updateInfo();
                 this.updateGanttChart();
@@ -975,10 +998,21 @@
                 // Clear existing visualization
                 this.clearGroups();
 
-                if (!this.data || !this.data.events) return;
+                if (!this.data || !this.data.events) {
+                    console.log('No data or events available');
+                    return;
+                }
 
                 // Show events up to current index
                 const eventsToShow = this.data.events.slice(0, this.currentEventIndex + 1);
+                console.log('updateVisualization called:', {
+                    totalEvents: this.data.events.length,
+                    currentEventIndex: this.currentEventIndex,
+                    eventsToShow: eventsToShow.length,
+                    showSunburst: this.showSunburst,
+                    showGantt: this.showGantt,
+                    showConnections: this.showConnections
+                });
                 
                 if (this.showSunburst) {
                     this.createSunburstVisualization(eventsToShow);
@@ -1006,9 +1040,20 @@
             }
 
             createSunburstVisualization(events) {
+                console.log('Creating sunburst visualization for events:', events.length);
+                const fileScanEvents = events.filter(e => e.event_type === 'file_scan');
+                console.log('File scan events found:', fileScanEvents.length);
+                
                 events.forEach((event, index) => {
+                    console.log(`Processing event ${index}:`, {
+                        eventType: event.event_type,
+                        hasTreeStructure: !!(event.metadata && event.metadata.tree_structure),
+                        treeStructureKeys: event.metadata && event.metadata.tree_structure ? Object.keys(event.metadata.tree_structure) : []
+                    });
+                    
                     if (event.event_type === 'file_scan' && event.metadata.tree_structure) {
                         const zPosition = -index * this.zSpacing;
+                        console.log(`Creating sunburst for file_scan event at index ${index}, zPosition ${zPosition}`);
                         this.createSunburstAtPosition(event.metadata.tree_structure, zPosition, index);
                         this.createTimeLabel(event.timestamp, zPosition, 'file_scan');
                     }
@@ -1018,7 +1063,11 @@
             createSunburstAtPosition(treeData, zPosition, eventIndex) {
                 console.log('Creating sunburst at position:', {
                     zPosition: zPosition,
-                    eventIndex: eventIndex
+                    eventIndex: eventIndex,
+                    treeData: treeData,
+                    treeDataKeys: Object.keys(treeData || {}),
+                    hasChildren: !!(treeData && treeData.children),
+                    childrenCount: treeData && treeData.children ? treeData.children.length : 0
                 });
                 
                 this.createSunburstRecursive(
@@ -1036,6 +1085,14 @@
                 const angleSpan = endAngle - startAngle;
                 const radius = outerRadius || innerRadius + this.ringThickness;
                 const opacity = Math.max(0.3, 1 - eventIndex * 0.1);
+                
+                // Handle the actual data structure from unified_timeline.json
+                // Root node has properties directly, children have type/data structure
+                const nodeData = node.data || node;
+                const nodeType = node.type || (nodeData.type || 'folder'); // Default to folder for root
+                const nodeName = nodeData.name || node.name || 'Unknown';
+                const nodeSize = nodeData.size || node.size || 1;
+                const nodeMimeType = nodeData.mime_type || node.mime_type;
                     
                 // Create ring segment
                 const geometry = new THREE.RingGeometry(
@@ -1046,10 +1103,13 @@
                     startAngle, 
                     angleSpan
                 );
+                
                 // Debug statement for sunburst creation
                 console.log('Creating sunburst segment:', {
-                    nodeType: node.type,
-                    nodeName: node.name || (node.data && node.data.name),
+                    nodeType: nodeType,
+                    nodeName: nodeName,
+                    nodeSize: nodeSize,
+                    nodeMimeType: nodeMimeType,
                     startAngle: startAngle.toFixed(3),
                     endAngle: endAngle.toFixed(3), 
                     angleSpan: angleSpan.toFixed(3),
@@ -1063,13 +1123,13 @@
                     eventIndex: eventIndex,
                     opacity: opacity.toFixed(2)
                 });
+                
                 // Get color based on type and mime_type
                 let color;
-                if (node.type === 'folder') {
+                if (nodeType === 'folder') {
                     color = this.fileColors.folder;
                 } else {
-                    const mimeType = node.mime_type || (node.data && node.data.mime_type);
-                    color = this.fileColors[mimeType] || this.fileColors.default;
+                    color = this.fileColors[nodeMimeType] || this.fileColors.default;
                 }
 
                 const material = new THREE.MeshLambertMaterial({
@@ -1082,7 +1142,7 @@
                 const ring = new THREE.Mesh(geometry, material);
                 ring.position.copy(position);
                 ring.userData = { 
-                    node: node, 
+                    node: nodeData, 
                     type: 'sunburst', 
                     eventIndex: eventIndex,
                     originalOpacity: opacity
@@ -1090,8 +1150,9 @@
                 
                 this.sunburstGroup.add(ring);
 
-                // Process children
-                const children = node.children || (node.data && node.data.children);
+                // Process children - handle the actual data structure
+                // Root node has children directly, child nodes have children in their data
+                const children = node.children || nodeData.children || [];
                 if (children && children.length > 0) {
                     const totalValue = children.reduce((sum, child) => {
                         const childData = child.data || child;
@@ -1107,7 +1168,7 @@
                         const childAngleSpan = Math.max(minAngleRad, (childSize / totalValue) * angleSpan);
                         
                         this.createSunburstRecursive(
-                            childData,
+                            child, // Pass the original child object to preserve structure
                             currentAngle,
                             currentAngle + childAngleSpan,
                             radius + 2,
@@ -1526,7 +1587,16 @@
             }
 
             setCurrentEvent(index) {
-                if (!this.data || index < 0 || index >= this.data.events.length) return;
+                if (!this.data || index < 0 || index >= this.data.events.length) {
+                    console.log('Invalid event index:', index);
+                    return;
+                }
+                
+                console.log(`Setting current event to index ${index}:`, {
+                    eventType: this.data.events[index].event_type,
+                    eventId: this.data.events[index].event_id,
+                    timestamp: this.data.events[index].timestamp
+                });
                 
                 this.currentEventIndex = index;
                 document.getElementById('timeline-slider').value = index;
@@ -1591,6 +1661,26 @@
                 const loading = document.getElementById('loading');
                 loading.innerHTML = `<div class="error">Error: ${message}</div>`;
                 console.error('Visualizer Error:', message);
+            }
+
+            jumpToFileScan() {
+                if (!this.data || !this.data.events) return;
+                
+                // Find the last file_scan event to show all file_scan events
+                let lastFileScanIndex = -1;
+                for (let i = this.data.events.length - 1; i >= 0; i--) {
+                    if (this.data.events[i].event_type === 'file_scan') {
+                        lastFileScanIndex = i;
+                        break;
+                    }
+                }
+                
+                if (lastFileScanIndex !== -1) {
+                    console.log(`Jumping to last file_scan event at index ${lastFileScanIndex}`);
+                    this.setCurrentEvent(lastFileScanIndex);
+                } else {
+                    console.log('No file_scan events found in timeline');
+                }
             }
         }
 
