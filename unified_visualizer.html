@@ -15,7 +15,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f1419 0%, #1a202c 50%, #2d3748 100%);
+            background: radial-gradient(ellipse at center, #1a1a2e 0%, #16213e 50%, #0f1419 100%);
             overflow: hidden;
             color: white;
         }
@@ -29,6 +29,24 @@
         #threejs-container {
             width: 100%;
             height: 100%;
+            position: relative;
+        }
+
+        #threejs-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 50% 50%, rgba(74, 144, 226, 0.1) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        #threejs-container canvas {
+            position: relative;
+            z-index: 2;
         }
 
         .panel {
@@ -483,18 +501,19 @@
         </div>
 
         <div class="z-axis-indicator hidden" id="z-axis-indicator">
-            <h4 style="margin-bottom: 10px; color: #4CAF50;">Z-Axis</h4>
+            <h4 style="margin-bottom: 10px; color: #4CAF50;">Inspector View</h4>
             <div class="axis-label">
                 <div class="axis-color" style="background: #4CAF50;"></div>
-                <span>Files</span>
+                <span>File Scans</span>
             </div>
             <div class="axis-label">
                 <div class="axis-color" style="background: #3B82F6;"></div>
                 <span>Milestones</span>
             </div>
             <div style="margin-top: 10px; font-size: 11px; opacity: 0.6;">
-                Time flows forward<br>
-                along Z-axis
+                Camera follows timeline<br>
+                Vertical inspection<br>
+                Focus on current event
             </div>
         </div>
 
@@ -517,6 +536,8 @@
                 this.playInterval = null;
                 this.currentDbFile = 'unified_timeline.json';
                 this.userLoadedFile = false;
+                this.userCameraPosition = null;
+                this.lastUserMove = 0;
                 
                 // Scene groups
                 this.sunburstGroup = new THREE.Group();
@@ -582,36 +603,38 @@
             setupScene() {
                 // Scene
                 this.scene = new THREE.Scene();
-                this.scene.background = new THREE.Color(0x0a0e14);
+                
+                // Remove solid background color for lightbox effect
+                // this.scene.background = new THREE.Color(0x0a0e14);
 
-                // Camera
+                // Camera - Inspector view that follows timeline vertically
                 this.camera = new THREE.PerspectiveCamera(
                     60, 
                     window.innerWidth / window.innerHeight, 
                     1, 
                     20000
                 );
-                this.camera.position.set(100, 100, 200);
-                this.camera.lookAt(0, 0, 0);
+                // Initial camera position - will be updated based on current event
+                this.camera.position.set(2.5, 30, 80);
+                this.camera.lookAt(2.5, 0, 0);
 
-                // Renderer
+                // Renderer with enhanced settings for lightbox effect
                 this.renderer = new THREE.WebGLRenderer({ 
                     antialias: true,
-                    alpha: true
+                    alpha: true,
+                    preserveDrawingBuffer: true
                 });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
                 this.renderer.shadowMap.enabled = true;
                 this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.setClearColor(0x000000, 0); // Transparent background
                 document.getElementById('threejs-container').appendChild(this.renderer.domElement);
 
-                // Lighting
-                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-                this.scene.add(ambientLight);
+                // Enhanced lighting system for lightbox effect
+                this.setupLightboxLighting();
 
-                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-                directionalLight.position.set(100, 100, 100);
-                directionalLight.castShadow = true;
-                this.scene.add(directionalLight);
+                // Add background elements for depth
+                this.createBackgroundElements();
 
                 // Add groups to scene
                 this.scene.add(this.sunburstGroup);
@@ -622,6 +645,122 @@
                 this.setupOrbitControls();
             }
 
+            setupLightboxLighting() {
+                // Remove existing lights
+                const lightsToRemove = [];
+                this.scene.children.forEach(child => {
+                    if (child.isLight) {
+                        lightsToRemove.push(child);
+                    }
+                });
+                lightsToRemove.forEach(light => this.scene.remove(light));
+
+                // Create lightbox lighting setup
+                
+                // 1. Subtle ambient light for base illumination
+                const ambientLight = new THREE.AmbientLight(0x1a1a2e, 0.3);
+                this.scene.add(ambientLight);
+
+                // 2. Main directional light (like a spotlight)
+                const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                mainLight.position.set(50, 100, 50);
+                mainLight.castShadow = true;
+                mainLight.shadow.mapSize.width = 2048;
+                mainLight.shadow.mapSize.height = 2048;
+                mainLight.shadow.camera.near = 0.5;
+                mainLight.shadow.camera.far = 500;
+                mainLight.shadow.camera.left = -100;
+                mainLight.shadow.camera.right = 100;
+                mainLight.shadow.camera.top = 100;
+                mainLight.shadow.camera.bottom = -100;
+                this.scene.add(mainLight);
+
+                // 3. Fill light from opposite direction
+                const fillLight = new THREE.DirectionalLight(0x4a90e2, 0.4);
+                fillLight.position.set(-30, 50, -30);
+                this.scene.add(fillLight);
+
+                // 4. Rim light for edge definition
+                const rimLight = new THREE.DirectionalLight(0xff6b6b, 0.3);
+                rimLight.position.set(0, -50, 100);
+                this.scene.add(rimLight);
+
+                // 5. Point lights for dramatic effect
+                const pointLight1 = new THREE.PointLight(0x4CAF50, 0.6, 200);
+                pointLight1.position.set(-20, 30, 50);
+                this.scene.add(pointLight1);
+
+                const pointLight2 = new THREE.PointLight(0x3B82F6, 0.4, 150);
+                pointLight2.position.set(30, 20, -30);
+                this.scene.add(pointLight2);
+
+                // 6. Subtle hemisphere light for environmental lighting
+                const hemisphereLight = new THREE.HemisphereLight(0x4a90e2, 0x1a1a2e, 0.2);
+                this.scene.add(hemisphereLight);
+            }
+
+            createBackgroundElements() {
+                // Create a large ground plane for shadows and depth
+                const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+                const groundMaterial = new THREE.MeshLambertMaterial({
+                    color: 0x0a0e14,
+                    transparent: true,
+                    opacity: 0.1,
+                    side: THREE.DoubleSide
+                });
+                const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+                ground.rotation.x = -Math.PI / 2;
+                ground.position.y = -50;
+                ground.receiveShadow = true;
+                this.scene.add(ground);
+
+                // Create subtle grid lines for depth perception
+                const gridHelper = new THREE.GridHelper(200, 20, 0x2a2a2a, 0x1a1a1a);
+                gridHelper.position.y = -49;
+                gridHelper.material.transparent = true;
+                gridHelper.material.opacity = 0.3;
+                this.scene.add(gridHelper);
+
+                // Create distant background planes for atmospheric depth
+                this.createAtmosphericBackground();
+            }
+
+            createAtmosphericBackground() {
+                // Back wall
+                const backWallGeometry = new THREE.PlaneGeometry(800, 400);
+                const backWallMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x0a0e14,
+                    transparent: true,
+                    opacity: 0.05,
+                    side: THREE.DoubleSide
+                });
+                const backWall = new THREE.Mesh(backWallGeometry, backWallMaterial);
+                backWall.position.z = -200;
+                this.scene.add(backWall);
+
+                // Side walls for enclosure effect
+                const sideWallGeometry = new THREE.PlaneGeometry(400, 400);
+                const sideWallMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x0a0e14,
+                    transparent: true,
+                    opacity: 0.03,
+                    side: THREE.DoubleSide
+                });
+
+                const leftWall = new THREE.Mesh(sideWallGeometry, sideWallMaterial);
+                leftWall.position.x = -200;
+                leftWall.rotation.y = Math.PI / 2;
+                this.scene.add(leftWall);
+
+                const rightWall = new THREE.Mesh(sideWallGeometry, sideWallMaterial);
+                rightWall.position.x = 200;
+                rightWall.rotation.y = -Math.PI / 2;
+                this.scene.add(rightWall);
+
+                // Add subtle fog for atmospheric depth
+                this.scene.fog = new THREE.Fog(0x0a0e14, 100, 800);
+            }
+
             setupOrbitControls() {
                 this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
                 this.controls.enableDamping = true;
@@ -629,6 +768,20 @@
                 this.controls.enableZoom = true;
                 this.controls.autoRotate = false;
                 this.controls.autoRotateSpeed = 0.5;
+                
+                // Allow some movement for inspector view while maintaining focus
+                this.controls.enablePan = true; // Enable panning for user control
+                this.controls.minDistance = 30; // Minimum zoom distance
+                this.controls.maxDistance = 150; // Maximum zoom distance
+                this.controls.minPolarAngle = Math.PI / 6; // Allow more vertical rotation
+                this.controls.maxPolarAngle = Math.PI / 2; // Limit vertical rotation
+                
+                // Add event listener to update camera position when user manually moves camera
+                this.controls.addEventListener('change', () => {
+                    // Store user's manual camera position for reference
+                    this.userCameraPosition = this.camera.position.clone();
+                    this.lastUserMove = Date.now();
+                });
             }
 
             setupEventListeners() {
@@ -773,195 +926,6 @@
                 outputArea.style.display = 'block';
             }
 
-            generateSampleData() {
-                console.log('Generating sample data for demonstration');
-                this.data = {
-                    metadata: {
-                        total_events: 4,
-                        event_types: {
-                            'file_scan': 2,
-                            'milestone': 2
-                        },
-                        time_range: {
-                            start: Date.now() / 1000 - 86400 * 7,
-                            end: Date.now() / 1000
-                        }
-                    },
-                    events: [
-                        {
-                            event_id: 'filescan_1',
-                            timestamp: Date.now() / 1000 - 86400 * 6,
-                            event_type: 'file_scan',
-                            metadata: {
-                                root_path: '/project',
-                                file_count: 5,
-                                total_size: 15000,
-                                tree_structure: {
-                                    name: 'project',
-                                    type: 'folder',
-                                    size: 15000,
-                                    file_count: 5,
-                                    children: [
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'index.html',
-                                                size: 2000,
-                                                mime_type: 'text/html'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'app.js',
-                                                size: 8000,
-                                                mime_type: 'text/javascript'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'style.css',
-                                                size: 3000,
-                                                mime_type: 'text/css'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'README.md',
-                                                size: 1500,
-                                                mime_type: 'text/markdown'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'package.json',
-                                                size: 500,
-                                                mime_type: 'application/json'
-                                            }
-                                        }
-                                    ]
-                                }
-                            }
-                        },
-                        {
-                            event_id: 'milestone_1',
-                            timestamp: Date.now() / 1000 - 86400 * 5,
-                            event_type: 'milestone',
-                            metadata: {
-                                title: '📋 Project Setup Complete',
-                                description: 'Initial project structure and configuration files',
-                                category: 'deliverable',
-                                priority: 'high',
-                                participants: ['dev@example.com'],
-                                related_files: ['package.json', 'README.md'],
-                                confidence: 0.9
-                            }
-                        },
-                        {
-                            event_id: 'milestone_2',
-                            timestamp: Date.now() / 1000 - 86400 * 3,
-                            event_type: 'milestone',
-                            metadata: {
-                                title: '⏰ Feature Implementation Deadline',
-                                description: 'Complete main application features by this date',
-                                category: 'deadline',
-                                priority: 'critical',
-                                participants: ['pm@example.com', 'dev@example.com'],
-                                related_files: ['app.js', 'style.css'],
-                                confidence: 0.95
-                            }
-                        },
-                        {
-                            event_id: 'filescan_2',
-                            timestamp: Date.now() / 1000 - 86400 * 1,
-                            event_type: 'file_scan',
-                            metadata: {
-                                root_path: '/project',
-                                file_count: 8,
-                                total_size: 25000,
-                                tree_structure: {
-                                    name: 'project',
-                                    type: 'folder',
-                                    size: 25000,
-                                    file_count: 8,
-                                    children: [
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'index.html',
-                                                size: 3000,
-                                                mime_type: 'text/html'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'app.js',
-                                                size: 12000,
-                                                mime_type: 'text/javascript'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'style.css',
-                                                size: 5000,
-                                                mime_type: 'text/css'
-                                            }
-                                        },
-                                        {
-                                            type: 'folder',
-                                            data: {
-                                                name: 'components',
-                                                size: 5000,
-                                                file_count: 3,
-                                                children: [
-                                                    {
-                                                        type: 'file',
-                                                        data: {
-                                                            name: 'header.js',
-                                                            size: 2000,
-                                                            mime_type: 'text/javascript'
-                                                        }
-                                                    },
-                                                    {
-                                                        type: 'file',
-                                                        data: {
-                                                            name: 'footer.js',
-                                                            size: 1500,
-                                                            mime_type: 'text/javascript'
-                                                        }
-                                                    },
-                                                    {
-                                                        type: 'file',
-                                                        data: {
-                                                            name: 'sidebar.js',
-                                                            size: 1500,
-                                                            mime_type: 'text/javascript'
-                                                        }
-                                                    }
-                                                ]
-                                            }
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    ],
-                    correlations: [
-                        {
-                            file_event_id: 'filescan_2',
-                            milestone_event_id: 'milestone_2',
-                            correlation_strength: 0.8,
-                            correlation_type: 'temporal_file_mention'
-                        }
-                    ]
-                };
-                this.initializeTimeline();
-            }
 
             initializeTimeline() {
                 console.log('Initializing timeline with data:', {
@@ -987,7 +951,7 @@
                 this.updateInfo();
                 this.updateGanttChart();
                 this.updateLegend();
-                this.resetCamera();
+                this.updateCameraPosition();
             }
 
             createVisualization() {
@@ -1052,7 +1016,8 @@
                     });
                     
                     if (event.event_type === 'file_scan' && event.metadata.tree_structure) {
-                        const zPosition = -index * this.zSpacing;
+                        // Position all events at the same Z position (centered) - timeline scrolls by
+                        const zPosition = 0; // Fixed center position
                         console.log(`Creating sunburst for file_scan event at index ${index}, zPosition ${zPosition}`);
                         this.createSunburstAtPosition(event.metadata.tree_structure, zPosition, index);
                         this.createTimeLabel(event.timestamp, zPosition, 'file_scan');
@@ -1070,13 +1035,16 @@
                     childrenCount: treeData && treeData.children ? treeData.children.length : 0
                 });
                 
+                // Position sunburst at the center, close to milestones
+                const sunburstX = 0; // Center position
+                
                 this.createSunburstRecursive(
                     treeData, 
                     0, 
                     Math.PI * 2, 
                     5, 
                     0, 
-                    new THREE.Vector3(0, 0, zPosition), 
+                    new THREE.Vector3(sunburstX, 0, zPosition), 
                     eventIndex
                 );
             }
@@ -1084,7 +1052,7 @@
             createSunburstRecursive(node, startAngle, endAngle, innerRadius, outerRadius, position, eventIndex) {
                 const angleSpan = endAngle - startAngle;
                 const radius = outerRadius || innerRadius + this.ringThickness;
-                const opacity = Math.max(0.3, 1 - eventIndex * 0.1);
+                const opacity = Math.max(0.6, 1 - eventIndex * 0.05);
                 
                 // Handle the actual data structure from unified_timeline.json
                 // Root node has properties directly, children have type/data structure
@@ -1136,7 +1104,9 @@
                     color: color,
                     transparent: true,
                     opacity: opacity,
-                    side: THREE.DoubleSide
+                    side: THREE.DoubleSide,
+                    emissive: new THREE.Color(color).multiplyScalar(0.1),
+                    emissiveIntensity: 0.2
                 });
 
                 const ring = new THREE.Mesh(geometry, material);
@@ -1184,12 +1154,13 @@
 
             createGanttVisualization(events) {
                 const milestoneEvents = events.filter(e => e.event_type === 'milestone');
-                const ganttX = 80; // Position to the right of sunburst
+                const ganttX = 5; // Position very close to sunburst (was 25)
                 
                 milestoneEvents.forEach((event, index) => {
                     const milestone = event.metadata;
-                    const zPosition = -events.indexOf(event) * this.zSpacing;
-                    const yPosition = index * 15; // Stack vertically
+                    // Position all events at the same Z position (centered) - timeline scrolls by
+                    const zPosition = 0; // Fixed center position
+                    const yPosition = index * 12; // Reduce vertical spacing (was 15)
                     
                     this.createMilestoneBar3D(milestone, ganttX, yPosition, zPosition, event.event_id);
                 });
@@ -1198,12 +1169,15 @@
             createMilestoneBar3D(milestone, x, y, z, eventId) {
                 const color = this.milestoneColors[milestone.category] || this.milestoneColors.default;
                 
-                // Create milestone bar
-                const geometry = new THREE.BoxGeometry(12, 4, 8);
+                // Create milestone bar - slightly smaller for better balance
+                const geometry = new THREE.BoxGeometry(8, 3, 6); // Reduced from 12, 4, 8
                 const material = new THREE.MeshLambertMaterial({
                     color: color,
                     transparent: true,
-                    opacity: 0.8
+                    opacity: 0.9,
+                    emissive: new THREE.Color(color).multiplyScalar(0.15),
+                    emissiveIntensity: 0.3,
+                    shininess: 30
                 });
 
                 const bar = new THREE.Mesh(geometry, material);
@@ -1217,8 +1191,8 @@
 
                 this.ganttGroup.add(bar);
 
-                // Add milestone marker
-                const markerGeometry = new THREE.SphereGeometry(2);
+                // Add milestone marker - slightly smaller
+                const markerGeometry = new THREE.SphereGeometry(1.5); // Reduced from 2
                 const markerMaterial = new THREE.MeshBasicMaterial({
                     color: milestone.priority === 'critical' ? 0xFF0000 : color,
                     transparent: true,
@@ -1226,7 +1200,7 @@
                 });
                 
                 const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-                marker.position.set(x - 8, y, z);
+                marker.position.set(x - 6, y, z); // Adjusted position for smaller bar
                 marker.userData = { 
                     milestone: milestone, 
                     type: 'milestone_marker',
@@ -1236,7 +1210,7 @@
                 this.ganttGroup.add(marker);
 
                 // Add text label
-                this.createTextLabel(milestone.title, x + 8, y + 6, z);
+                this.createTextLabel(milestone.title, x + 6, y + 4, z); // Adjusted position
             }
 
             createTextLabel(text, x, y, z) {
@@ -1246,7 +1220,7 @@
                 const context = canvas.getContext('2d');
                 
                 context.fillStyle = '#ffffff';
-                context.font = 'bold 14px Arial';
+                context.font = 'bold 12px Arial'; // Slightly smaller font
                 context.fillText(text.substring(0, 20), 10, 30);
                 
                 const texture = new THREE.CanvasTexture(canvas);
@@ -1256,7 +1230,7 @@
                     alphaTest: 0.1
                 });
                 
-                const geometry = new THREE.PlaneGeometry(16, 4);
+                const geometry = new THREE.PlaneGeometry(12, 3); // Smaller text plane
                 const textMesh = new THREE.Mesh(geometry, material);
                 
                 textMesh.position.set(x, y, z);
@@ -1288,7 +1262,8 @@
                 const geometry = new THREE.PlaneGeometry(8, 2);
                 const label = new THREE.Mesh(geometry, material);
                 
-                label.position.set(-60, 0, z);
+                // Position label to align with sunburst
+                label.position.set(-15, 0, z); // Moved to align with sunburst at X=0
                 label.lookAt(this.camera.position);
                 
                 this.sunburstGroup.add(label);
@@ -1302,12 +1277,12 @@
                     const milestoneEvent = events.find(e => e.event_id === correlation.milestone_event_id);
                     
                     if (fileEvent && milestoneEvent) {
-                        const fileZ = -events.indexOf(fileEvent) * this.zSpacing;
-                        const milestoneZ = -events.indexOf(milestoneEvent) * this.zSpacing;
+                        // All events are at the same Z position now
+                        const zPosition = 0; // Fixed center position
                         
                         this.createConnectionLine(
-                            new THREE.Vector3(40, 0, fileZ),
-                            new THREE.Vector3(80, 0, milestoneZ),
+                            new THREE.Vector3(0, 0, zPosition), // Sunburst position
+                            new THREE.Vector3(5, 0, zPosition), // Milestone position
                             correlation.correlation_strength
                         );
                     }
@@ -1525,12 +1500,8 @@
                 if (eventIndex !== -1) {
                     this.setCurrentEvent(eventIndex);
                     
-                    // Animate camera to milestone
-                    const zPosition = -eventIndex * this.zSpacing;
-                    this.animateCameraTo(
-                        new THREE.Vector3(80, 50, zPosition + 50),
-                        new THREE.Vector3(80, 0, zPosition)
-                    );
+                    // Inspector view - camera will automatically position to the milestone
+                    this.updateCameraPosition();
                 }
             }
 
@@ -1602,6 +1573,7 @@
                 document.getElementById('timeline-slider').value = index;
                 this.updateVisualization();
                 this.updateGanttChart();
+                this.updateCameraPosition();
             }
 
             toggleSunburst() {
@@ -1626,13 +1598,10 @@
             }
 
             resetCamera() {
-                const numEvents = (this.data && this.data.events) ? this.data.events.length : 1;
-                const timelineLength = (numEvents - 1) * this.zSpacing;
-                
-                this.camera.position.set(100, 100, 200);
-                this.controls.target.set(0, 0, -timelineLength / 2);
-                this.camera.lookAt(this.controls.target);
-                this.controls.update();
+                // Inspector view - update camera position based on current event
+                this.userCameraPosition = null; // Reset user camera position
+                this.lastUserMove = 0; // Reset user move timestamp
+                this.updateCameraPosition();
             }
 
             onWindowResize() {
@@ -1681,6 +1650,41 @@
                 } else {
                     console.log('No file_scan events found in timeline');
                 }
+            }
+
+            updateCameraPosition() {
+                if (!this.data || !this.data.events || this.currentEventIndex < 0) {
+                    return;
+                }
+
+                // Find all milestones up to and including the current event
+                const eventsUpToCurrent = this.data.events.slice(0, this.currentEventIndex + 1);
+                const milestoneEvents = eventsUpToCurrent.filter(e => e.event_type === 'milestone');
+
+                // Find the Y position for the current event
+                let targetY = 0;
+                if (milestoneEvents.length > 0) {
+                    // If the current event is a milestone, center on it
+                    const currentEvent = this.data.events[this.currentEventIndex];
+                    let milestoneIndex;
+                    if (currentEvent.event_type === 'milestone') {
+                        // Find its index among milestones up to current
+                        milestoneIndex = milestoneEvents.length - 1;
+                    } else {
+                        // Otherwise, center on the last milestone before current event
+                        milestoneIndex = milestoneEvents.length - 1;
+                    }
+                    targetY = milestoneIndex * 12;
+                } else {
+                    // No milestones yet, default to 0
+                    targetY = 0;
+                }
+
+                // Set camera and controls target directly
+                this.camera.position.set(2.5, targetY + 30, 80);
+                this.controls.target.set(2.5, targetY, 0);
+                this.camera.lookAt(this.controls.target);
+                this.controls.update();
             }
         }
 

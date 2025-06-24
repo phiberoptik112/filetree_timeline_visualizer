@@ -3,7 +3,6 @@ FROM nginx:alpine
 RUN rm -rf /usr/share/nginx/html/*
 
 COPY unified_visualizer.html /usr/share/nginx/html/
-COPY file-tree-timeline/frontend/ /usr/share/nginx/html/
-COPY unified_timeline.json /usr/share/nginx/html/  # Optional: for demo/testing
+COPY file_tree_timeline/frontend/ /usr/share/nginx/html/
 
 EXPOSE 80 
