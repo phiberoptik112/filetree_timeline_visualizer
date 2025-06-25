@@ -1657,26 +1657,32 @@
                     return;
                 }
 
-                // Find all milestones up to and including the current event
+                // Find all milestones and file scans up to and including the current event
                 const eventsUpToCurrent = this.data.events.slice(0, this.currentEventIndex + 1);
                 const milestoneEvents = eventsUpToCurrent.filter(e => e.event_type === 'milestone');
+                const fileScanEvents = eventsUpToCurrent.filter(e => e.event_type === 'file_scan');
 
                 // Find the Y position for the current event
                 let targetY = 0;
-                if (milestoneEvents.length > 0) {
-                    // If the current event is a milestone, center on it
-                    const currentEvent = this.data.events[this.currentEventIndex];
-                    let milestoneIndex;
-                    if (currentEvent.event_type === 'milestone') {
-                        // Find its index among milestones up to current
-                        milestoneIndex = milestoneEvents.length - 1;
-                    } else {
-                        // Otherwise, center on the last milestone before current event
-                        milestoneIndex = milestoneEvents.length - 1;
-                    }
+                const currentEvent = this.data.events[this.currentEventIndex];
+                if (currentEvent.event_type === 'milestone' && milestoneEvents.length > 0) {
+                    // Center on the current milestone
+                    const milestoneIndex = milestoneEvents.length - 1;
                     targetY = milestoneIndex * 12;
+                } else if (currentEvent.event_type === 'file_scan' && fileScanEvents.length > 0) {
+                    // Center on the current file scan
+                    const fileScanIndex = fileScanEvents.length - 1;
+                    targetY = fileScanIndex * 12;
+                } else if (milestoneEvents.length > 0) {
+                    // Center on the last milestone before current event
+                    const milestoneIndex = milestoneEvents.length - 1;
+                    targetY = milestoneIndex * 12;
+                } else if (fileScanEvents.length > 0) {
+                    // Center on the last file scan before current event
+                    const fileScanIndex = fileScanEvents.length - 1;
+                    targetY = fileScanIndex * 12;
                 } else {
-                    // No milestones yet, default to 0
+                    // No milestones or file scans yet, default to 0
                     targetY = 0;
                 }
 
