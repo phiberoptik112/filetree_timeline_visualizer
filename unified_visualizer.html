@@ -1155,23 +1155,29 @@
 
             createGanttVisualization(events) {
                 const milestoneEvents = events.filter(e => e.event_type === 'milestone');
-                const ganttX = 5; // Position very close to sunburst (was 25)
-                
+                const barSpacing = 12; // X spacing between bars
+                const barHeight = 24; // Height of each bar
+                const barWidth = 2;   // Width of each bar
+                const barDepth = 2;   // Depth of each bar
+                const baseY = 0;      // All bars start at Y=0
+                const zPosition = 0;  // All bars at Z=0
+                let barTops = [];
+
                 milestoneEvents.forEach((event, index) => {
                     const milestone = event.metadata;
-                    // Position all events at the same Z position (centered) - timeline scrolls by
-                    const zPosition = 0; // Fixed center position
-                    const yPosition = index * 12; // Reduce vertical spacing (was 15)
-                    
-                    this.createMilestoneBar3D(milestone, ganttX, yPosition, zPosition, event.event_id);
+                    const x = index * barSpacing;
+                    // Draw the bar and get its top position
+                    const topPos = this.createMilestoneBar3D(milestone, x, baseY, zPosition, event.event_id, barHeight, barWidth, barDepth);
+                    barTops.push(topPos);
                 });
+                // Draw horizontal connectors between bar tops
+                this.createHorizontalConnectors(barTops);
             }
 
-            createMilestoneBar3D(milestone, x, y, z, eventId) {
+            createMilestoneBar3D(milestone, x, baseY, z, eventId, barHeight, barWidth, barDepth) {
                 const color = this.milestoneColors[milestone.category] || this.milestoneColors.default;
-                
-                // Create milestone bar - slightly smaller for better balance
-                const geometry = new THREE.BoxGeometry(8, 3, 6); // Reduced from 12, 4, 8
+                // Main vertical bar
+                const geometry = new THREE.BoxGeometry(barWidth, barHeight, barDepth);
                 const material = new THREE.MeshLambertMaterial({
                     color: color,
                     transparent: true,
@@ -1180,38 +1186,48 @@
                     emissiveIntensity: 0.3,
                     shininess: 30
                 });
-
                 const bar = new THREE.Mesh(geometry, material);
-                bar.position.set(x, y, z);
-                bar.userData = { 
-                    milestone: milestone, 
+                // Position so base is at Y=0
+                bar.position.set(x, baseY + barHeight / 2, z);
+                bar.userData = {
+                    milestone: milestone,
                     type: 'milestone',
                     eventId: eventId
                 };
                 bar.castShadow = true;
-
                 this.ganttGroup.add(bar);
 
-                // Add milestone marker - slightly smaller
-                const markerGeometry = new THREE.SphereGeometry(1.5); // Reduced from 2
-                const markerMaterial = new THREE.MeshBasicMaterial({
-                    color: milestone.priority === 'critical' ? 0xFF0000 : color,
-                    transparent: true,
-                    opacity: 0.9
-                });
-                
-                const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-                marker.position.set(x - 6, y, z); // Adjusted position for smaller bar
-                marker.userData = { 
-                    milestone: milestone, 
-                    type: 'milestone_marker',
-                    eventId: eventId
-                };
-                
-                this.ganttGroup.add(marker);
+                // Green outline (slightly larger)
+                const greenGeom = new THREE.BoxGeometry(barWidth + 0.2, barHeight + 0.2, barDepth + 0.2);
+                const greenEdges = new THREE.EdgesGeometry(greenGeom);
+                const greenLine = new THREE.LineSegments(greenEdges, new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 }));
+                greenLine.position.copy(bar.position);
+                this.ganttGroup.add(greenLine);
 
-                // Add text label
-                this.createTextLabel(milestone.title, x + 6, y + 4, z); // Adjusted position
+                // Red outline (slightly larger than green)
+                const redGeom = new THREE.BoxGeometry(barWidth + 0.4, barHeight + 0.4, barDepth + 0.4);
+                const redEdges = new THREE.EdgesGeometry(redGeom);
+                const redLine = new THREE.LineSegments(redEdges, new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 }));
+                redLine.position.copy(bar.position);
+                this.ganttGroup.add(redLine);
+
+                // Label above the bar
+                this.createTextLabel(milestone.title, x, baseY + barHeight + 2, z);
+
+                // Return the top position for connector drawing
+                return new THREE.Vector3(x, baseY + barHeight, z);
+            }
+
+            createHorizontalConnectors(barTops) {
+                if (barTops.length < 2) return;
+                for (let i = 0; i < barTops.length - 1; i++) {
+                    const start = barTops[i];
+                    const end = barTops[i + 1];
+                    const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+                    const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 3 });
+                    const line = new THREE.Line(geometry, material);
+                    this.ganttGroup.add(line);
+                }
             }
 
             createTextLabel(text, x, y, z) {
