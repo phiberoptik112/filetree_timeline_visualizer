@@ -1021,7 +1021,7 @@
                         const zPosition = 0; // Fixed center position
                         console.log(`Creating sunburst for file_scan event at index ${index}, zPosition ${zPosition}`);
                         this.createSunburstAtPosition(event.metadata.tree_structure, zPosition, index);
-                        this.createTimeLabel(event.timestamp, zPosition, 'file_scan');
+                        this.createTextLabel(new Date(event.timestamp * 1000).toLocaleDateString(), zPosition, 'file_scan');
                     }
                 });
             }
@@ -1153,106 +1153,105 @@
                 }
             }
 
+            // Map timestamp to Y position (linear between min/max)
+            timestampToY(timestamp, minTime, maxTime, minY, maxY) {
+                if (maxTime === minTime) return minY;
+                const t = (timestamp - minTime) / (maxTime - minTime);
+                return minY + t * (maxY - minY);
+            }
+
             createGanttVisualization(events) {
                 const milestoneEvents = events.filter(e => e.event_type === 'milestone');
-                const barSpacing = 12; // X spacing between bars
-                const barHeight = 24; // Height of each bar
-                const barWidth = 2;   // Width of each bar
-                const barDepth = 2;   // Depth of each bar
-                const baseY = 0;      // All bars start at Y=0
-                const zPosition = 0;  // All bars at Z=0
-                let barTops = [];
-
+                if (milestoneEvents.length === 0) return;
+                // Timeline axis parameters
+                const axisX = 0, axisZ = 0;
+                const axisColor = 0xff00ff; // bright purple
+                const axisWidth = 0.3;
+                const minY = 0, maxY = 100; // Y range for timeline
+                // Get min/max times
+                const times = milestoneEvents.map(e => e.metadata.start_time || e.timestamp);
+                const endTimes = milestoneEvents.map(e => (e.metadata.end_time || (e.metadata.start_time || e.timestamp) + (e.metadata.duration || 86400)));
+                const minTime = Math.min(...times);
+                const maxTime = Math.max(...endTimes);
+                // Draw vertical axis
+                const axisGeom = new THREE.CylinderGeometry(axisWidth, axisWidth, maxY - minY + 10, 32);
+                const axisMat = new THREE.MeshBasicMaterial({ color: axisColor });
+                const axisMesh = new THREE.Mesh(axisGeom, axisMat);
+                axisMesh.position.set(axisX, (minY + maxY) / 2, axisZ);
+                this.ganttGroup.add(axisMesh);
+                // Draw dashed horizontal reference line at first milestone Y
+                const firstY = this.timestampToY(times[0], minTime, maxTime, minY, maxY);
+                const dashMat = new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 2, gapSize: 2 });
+                const dashGeom = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(-20, firstY, axisZ),
+                    new THREE.Vector3(20, firstY, axisZ)
+                ]);
+                const dashLine = new THREE.Line(dashGeom, dashMat);
+                dashLine.computeLineDistances();
+                this.ganttGroup.add(dashLine);
+                // For each milestone, draw tick, bar, and label
                 milestoneEvents.forEach((event, index) => {
                     const milestone = event.metadata;
-                    const x = index * barSpacing;
-                    // Draw the bar and get its top position
-                    const topPos = this.createMilestoneBar3D(milestone, x, baseY, zPosition, event.event_id, barHeight, barWidth, barDepth);
-                    barTops.push(topPos);
+                    const startTime = milestone.start_time || event.timestamp;
+                    const duration = milestone.duration || (milestone.end_time ? (milestone.end_time - startTime) : 86400);
+                    const endTime = milestone.end_time || (startTime + duration);
+                    const startY = this.timestampToY(startTime, minTime, maxTime, minY, maxY);
+                    const endY = this.timestampToY(endTime, minTime, maxTime, minY, maxY);
+                    // Draw tick/marker at startY
+                    const tickGeom = new THREE.CylinderGeometry(0.5, 0.5, 2, 16);
+                    const tickMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+                    const tick = new THREE.Mesh(tickGeom, tickMat);
+                    tick.position.set(axisX, startY, axisZ);
+                    this.ganttGroup.add(tick);
+                    // Draw milestone bar (vertical, from startY to endY)
+                    const barHeight = endY - startY;
+                    const barGeom = new THREE.BoxGeometry(2, Math.abs(barHeight), 2);
+                    const color = this.milestoneColors[milestone.category] || this.milestoneColors.default;
+                    const barMat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.9 });
+                    const bar = new THREE.Mesh(barGeom, barMat);
+                    bar.position.set(axisX, startY + barHeight / 2, axisZ);
+                    bar.userData = { milestone, type: 'milestone', eventId: event.event_id };
+                    this.ganttGroup.add(bar);
+                    // Optionally, draw dashed line at endY
+                    const endDashGeom = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(-20, endY, axisZ),
+                        new THREE.Vector3(20, endY, axisZ)
+                    ]);
+                    const endDashLine = new THREE.Line(endDashGeom, dashMat);
+                    endDashLine.computeLineDistances();
+                    this.ganttGroup.add(endDashLine);
+                    // Label at top of bar
+                    this.createTextLabel(milestone.title, axisX + 4, endY + 2, axisZ);
                 });
-                // Draw horizontal connectors between bar tops
-                this.createHorizontalConnectors(barTops);
-            }
-
-            createMilestoneBar3D(milestone, x, baseY, z, eventId, barHeight, barWidth, barDepth) {
-                const color = this.milestoneColors[milestone.category] || this.milestoneColors.default;
-                // Main vertical bar
-                const geometry = new THREE.BoxGeometry(barWidth, barHeight, barDepth);
-                const material = new THREE.MeshLambertMaterial({
-                    color: color,
-                    transparent: true,
-                    opacity: 0.9,
-                    emissive: new THREE.Color(color).multiplyScalar(0.15),
-                    emissiveIntensity: 0.3,
-                    shininess: 30
-                });
-                const bar = new THREE.Mesh(geometry, material);
-                // Position so base is at Y=0
-                bar.position.set(x, baseY + barHeight / 2, z);
-                bar.userData = {
-                    milestone: milestone,
-                    type: 'milestone',
-                    eventId: eventId
-                };
-                bar.castShadow = true;
-                this.ganttGroup.add(bar);
-
-                // Green outline (slightly larger)
-                const greenGeom = new THREE.BoxGeometry(barWidth + 0.2, barHeight + 0.2, barDepth + 0.2);
-                const greenEdges = new THREE.EdgesGeometry(greenGeom);
-                const greenLine = new THREE.LineSegments(greenEdges, new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 }));
-                greenLine.position.copy(bar.position);
-                this.ganttGroup.add(greenLine);
-
-                // Red outline (slightly larger than green)
-                const redGeom = new THREE.BoxGeometry(barWidth + 0.4, barHeight + 0.4, barDepth + 0.4);
-                const redEdges = new THREE.EdgesGeometry(redGeom);
-                const redLine = new THREE.LineSegments(redEdges, new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 }));
-                redLine.position.copy(bar.position);
-                this.ganttGroup.add(redLine);
-
-                // Label above the bar
-                this.createTextLabel(milestone.title, x, baseY + barHeight + 2, z);
-
-                // Return the top position for connector drawing
-                return new THREE.Vector3(x, baseY + barHeight, z);
-            }
-
-            createHorizontalConnectors(barTops) {
-                if (barTops.length < 2) return;
-                for (let i = 0; i < barTops.length - 1; i++) {
-                    const start = barTops[i];
-                    const end = barTops[i + 1];
-                    const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
-                    const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 3 });
-                    const line = new THREE.Line(geometry, material);
-                    this.ganttGroup.add(line);
-                }
             }
 
             createTextLabel(text, x, y, z) {
+                // Ensure text is a string
+                if (typeof text !== 'string') {
+                    if (typeof text === 'number') {
+                        // Assume timestamp, format as date string
+                        text = new Date(text * 1000).toLocaleDateString();
+                    } else {
+                        text = String(text);
+                    }
+                }
                 const canvas = document.createElement('canvas');
                 canvas.width = 256;
                 canvas.height = 64;
                 const context = canvas.getContext('2d');
-                
+                context.font = 'bold 12px Arial';
                 context.fillStyle = '#ffffff';
-                context.font = 'bold 12px Arial'; // Slightly smaller font
                 context.fillText(text.substring(0, 20), 10, 30);
-                
                 const texture = new THREE.CanvasTexture(canvas);
                 const material = new THREE.MeshBasicMaterial({
                     map: texture,
                     transparent: true,
                     alphaTest: 0.1
                 });
-                
-                const geometry = new THREE.PlaneGeometry(12, 3); // Smaller text plane
+                const geometry = new THREE.PlaneGeometry(12, 3);
                 const textMesh = new THREE.Mesh(geometry, material);
-                
                 textMesh.position.set(x, y, z);
                 textMesh.lookAt(this.camera.position);
-                
                 this.ganttGroup.add(textMesh);
             }
 
