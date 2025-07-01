@@ -460,6 +460,21 @@
                 
                 <textarea id="generated-cmd-output" rows="4" style="width: 100%; margin-top: 15px; background: #0f1419; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: #4CAF50; font-family: monospace; font-size: 11px; display: none; padding: 8px;"></textarea>
             </div>
+
+            <!-- Milestone Color Controls -->
+            <div class="control-section">
+                <h4>Milestone Bar Colors</h4>
+                <label for="milestone-select" style="font-size: 12px; margin-bottom: 4px; display: block;">Select Milestone:</label>
+                <select id="milestone-select" style="width: 100%; margin-bottom: 8px;"></select>
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <label for="intended-color-picker" style="font-size: 12px;">Intended (Outline):</label>
+                    <input type="color" id="intended-color-picker" value="#ff00ff">
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label for="actual-color-picker" style="font-size: 12px;">Actual (Solid):</label>
+                    <input type="color" id="actual-color-picker" value="#ff00ff">
+                </div>
+            </div>
         </div>
 
         <div id="info-panel" class="panel hidden">
@@ -822,6 +837,9 @@
 
                 // Command generator
                 document.getElementById('generate-cmd-btn').addEventListener('click', () => this.generateBackendCommand());
+
+                // Milestone color controls
+                this.setupMilestoneColorControls();
             }
 
             setupSunburstControls() {
@@ -850,6 +868,61 @@
                 });
             }
 
+            setupMilestoneColorControls() {
+                this.milestoneSelect = document.getElementById('milestone-select');
+                this.intendedColorPicker = document.getElementById('intended-color-picker');
+                this.actualColorPicker = document.getElementById('actual-color-picker');
+                // Populate dropdown
+                this.updateMilestoneDropdown();
+                // On milestone select, update color pickers
+                this.milestoneSelect.addEventListener('change', () => this.updateColorPickers());
+                // On color change, update milestone and re-render
+                this.intendedColorPicker.addEventListener('input', () => this.applyColorPickers());
+                this.actualColorPicker.addEventListener('input', () => this.applyColorPickers());
+            }
+
+            updateMilestoneDropdown() {
+                if (!this.data || !this.data.events) return;
+                const milestones = this.data.events.filter(e => e.event_type === 'milestone');
+                this.milestoneSelect.innerHTML = '';
+                milestones.forEach((event, idx) => {
+                    const option = document.createElement('option');
+                    option.value = idx;
+                    option.textContent = event.metadata.title || `Milestone ${idx + 1}`;
+                    this.milestoneSelect.appendChild(option);
+                });
+                this.updateColorPickers();
+            }
+
+            updateColorPickers() {
+                if (!this.data || !this.data.events) return;
+                const milestones = this.data.events.filter(e => e.event_type === 'milestone');
+                const idx = parseInt(this.milestoneSelect.value, 10) || 0;
+                const milestone = milestones[idx]?.metadata;
+                // Set pickers to current colors or default
+                this.intendedColorPicker.value = milestone?.intended_color ? this.toHexColor(milestone.intended_color) : '#ff00ff';
+                this.actualColorPicker.value = milestone?.actual_color ? this.toHexColor(milestone.actual_color) : '#ff00ff';
+            }
+
+            applyColorPickers() {
+                if (!this.data || !this.data.events) return;
+                const milestones = this.data.events.filter(e => e.event_type === 'milestone');
+                const idx = parseInt(this.milestoneSelect.value, 10) || 0;
+                const milestone = milestones[idx]?.metadata;
+                if (milestone) {
+                    milestone.intended_color = this.intendedColorPicker.value;
+                    milestone.actual_color = this.actualColorPicker.value;
+                    this.updateVisualization();
+                }
+            }
+
+            toHexColor(val) {
+                if (typeof val === 'string' && val.startsWith('#')) return val;
+                if (typeof val === 'number') return '#' + val.toString(16).padStart(6, '0');
+                if (val instanceof THREE.Color) return '#' + val.getHexString();
+                return '#ff00ff';
+            }
+
             async loadData() {
                 try {
                     console.log('Loading data from:', this.currentDbFile);
@@ -867,6 +940,7 @@
                     });
                     document.getElementById('current-db-file').textContent = this.currentDbFile;
                     this.initializeTimeline();
+                    this.updateMilestoneDropdown();
                 } catch (error) {
                     console.error('Error loading data:', error);
                     this.showError(`Failed to load data: ${error.message}`);
@@ -888,6 +962,7 @@
                             document.getElementById('current-db-file').textContent = file.name;
                             document.getElementById('db-file-error').style.display = 'none';
                             this.initializeTimeline();
+                            this.updateMilestoneDropdown();
                         } catch (parseErr) {
                             document.getElementById('db-file-error').textContent = 'Invalid JSON file.';
                             document.getElementById('db-file-error').style.display = 'block';
@@ -1195,33 +1270,59 @@
                     const startTime = milestone.start_time || event.timestamp;
                     const duration = milestone.duration || (milestone.end_time ? (milestone.end_time - startTime) : 86400);
                     const endTime = milestone.end_time || (startTime + duration);
+                    const intendedEnd = milestone.intended_end_time || endTime;
+                    const actualEnd = milestone.actual_end_time || endTime;
+                    const intendedDuration = intendedEnd - startTime;
+                    const actualDuration = actualEnd - startTime;
                     const startY = this.timestampToY(startTime, minTime, maxTime, minY, maxY);
-                    const endY = this.timestampToY(endTime, minTime, maxTime, minY, maxY);
+                    const intendedBarHeight = this.timestampToY(intendedEnd, minTime, maxTime, minY, maxY) - startY;
+                    const actualBarHeight = this.timestampToY(actualEnd, minTime, maxTime, minY, maxY) - startY;
+                    // Colors: allow manual override
+                    let intendedColor = milestone.intended_color || 0xff00ff;
+                    let actualColor = milestone.actual_color || 0xff00ff;
+                    // Accept CSS color strings
+                    if (typeof intendedColor === 'string') intendedColor = new THREE.Color(intendedColor);
+                    if (typeof actualColor === 'string') actualColor = new THREE.Color(actualColor);
                     // Draw tick/marker at startY
                     const tickGeom = new THREE.CylinderGeometry(0.5, 0.5, 2, 16);
                     const tickMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
                     const tick = new THREE.Mesh(tickGeom, tickMat);
                     tick.position.set(axisX, startY, axisZ);
                     this.ganttGroup.add(tick);
-                    // Draw milestone bar (vertical, from startY to endY)
-                    const barHeight = endY - startY;
-                    const barGeom = new THREE.BoxGeometry(2, Math.abs(barHeight), 2);
-                    const color = this.milestoneColors[milestone.category] || this.milestoneColors.default;
-                    const barMat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.9 });
-                    const bar = new THREE.Mesh(barGeom, barMat);
-                    bar.position.set(axisX, startY + barHeight / 2, axisZ);
-                    bar.userData = { milestone, type: 'milestone', eventId: event.event_id };
-                    this.ganttGroup.add(bar);
-                    // Optionally, draw dashed line at endY
+                    // Draw horizontal dashed line from axis to bar
+                    const barOffsetX = 10;
+                    const dashGeom = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(axisX, startY, axisZ),
+                        new THREE.Vector3(axisX + barOffsetX, startY, axisZ)
+                    ]);
+                    const dashLine = new THREE.Line(dashGeom, dashMat);
+                    dashLine.computeLineDistances();
+                    this.ganttGroup.add(dashLine);
+                    // Draw intended duration outline bar (vertical, at end of dashed line)
+                    const intendedBarGeom = new THREE.BoxGeometry(2, Math.abs(intendedBarHeight), 2);
+                    const intendedBarEdges = new THREE.EdgesGeometry(intendedBarGeom);
+                    const intendedBarLine = new THREE.LineSegments(
+                        intendedBarEdges,
+                        new THREE.LineBasicMaterial({ color: intendedColor, linewidth: 2 })
+                    );
+                    intendedBarLine.position.set(axisX + barOffsetX, startY + intendedBarHeight / 2, axisZ);
+                    this.ganttGroup.add(intendedBarLine);
+                    // Draw actual duration solid bar (vertical, inside outline)
+                    const actualBarGeom = new THREE.BoxGeometry(1.2, Math.abs(actualBarHeight), 1.2);
+                    const actualBarMat = new THREE.MeshLambertMaterial({ color: actualColor });
+                    const actualBar = new THREE.Mesh(actualBarGeom, actualBarMat);
+                    actualBar.position.set(axisX + barOffsetX, startY + actualBarHeight / 2, axisZ);
+                    this.ganttGroup.add(actualBar);
+                    // Optionally, draw dashed line at intended endY
                     const endDashGeom = new THREE.BufferGeometry().setFromPoints([
-                        new THREE.Vector3(-20, endY, axisZ),
-                        new THREE.Vector3(20, endY, axisZ)
+                        new THREE.Vector3(axisX, startY + intendedBarHeight, axisZ),
+                        new THREE.Vector3(axisX + barOffsetX, startY + intendedBarHeight, axisZ)
                     ]);
                     const endDashLine = new THREE.Line(endDashGeom, dashMat);
                     endDashLine.computeLineDistances();
                     this.ganttGroup.add(endDashLine);
-                    // Label at top of bar
-                    this.createTextLabel(milestone.title, axisX + 4, endY + 2, axisZ);
+                    // Label at top of intended bar
+                    this.createTextLabel(milestone.title, axisX + barOffsetX + 4, startY + intendedBarHeight + 2, axisZ);
                 });
             }
 
