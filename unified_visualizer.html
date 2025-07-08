@@ -424,10 +424,6 @@
                     <input type="range" id="ring-thickness-slider" min="2" max="20" value="6">
                     <span id="ring-thickness-value">6</span>
                 </label>
-                <label>Z Spacing:
-                    <input type="range" id="z-spacing-slider" min="5" max="50" value="20">
-                    <span id="z-spacing-value">20</span>
-                </label>
             </div>
 
             <!-- View Controls -->
@@ -536,6 +532,14 @@
             <div class="details-title" id="details-title">Hover for details</div>
             <div class="details-content" id="details-content"></div>
         </div>
+
+        <!-- Add this below the main timeline controls panel -->
+        <div id="file-scan-slider-container" class="panel" style="position:absolute; left:50%; transform:translateX(-50%); bottom:70px; min-width:220px; max-width:350px; z-index:201; background:rgba(0,0,0,0.7); display:none;">
+          <label style="color:#3B82F6; font-size:13px;">Jump to File Scan:
+            <input type="range" id="fileScanSlider" min="0" max="0" value="0" step="1" style="width:200px;">
+            <span id="fileScanSliderValue">1</span>
+          </label>
+        </div>
     </div>
 
     <script>
@@ -602,6 +606,43 @@
                     'default': 0x6B7280
                 };
                 
+                // Color mapping for file types (from unified_timeline_visualizer.html)
+                this.colorMap = {
+                    // Programming languages
+                    'text/javascript': '#f7df1e',  // JavaScript
+                    'application/javascript': '#f7df1e',
+                    'text/x-python': '#5c37ab',  // Python
+                    'text/html': '#e34c26',  // HTML
+                    'text/css': '#15b6b1',  // CSS
+                    'application/json': '#000000',  // JSON
+                    'text/markdown': '#083fa1',  // Markdown
+                    // Documents
+                    'application/pdf': '#ff0000',  // PDF
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '#217346',  // Word
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '#3c6f1d',  // Excel
+                    'application/vnd.ms-outlook': '#d48300',  // Outlook
+                    'application/vnd.ms-outlook.msg': '#d48300',  // Outlook MSG
+                    'message/rfc822': '#d48300',  // Email messages
+                    // Media
+                    'image/': '#ff6b6b',  // Images
+                    'video/': '#9b59b6',  // Video
+                    'audio/': '#3498db',  // Audio
+                    // Archives
+                    'application/zip': '#e67e22',  // ZIP
+                    'application/x-rar-compressed': '#e67e22',  // RAR
+                    'application/x-7z-compressed': '#e67e22',  // 7Z
+                    'application/x-tar': '#e67e22',  // TAR
+                    'application/gzip': '#e67e22',  // GZIP
+                    // Other
+                    'text/': '#95a5a6',  // Text files
+                    'folder': '#a73a81',  // Folders
+                    'default': '#bdc3c7'  // Default gray
+                };
+                // Initialize color cache
+                this.colorCache = new Map();
+                
+                this.fileScanEventIndices = [];
+                
                 this.init();
             }
 
@@ -614,6 +655,28 @@
                 
                 this.hideLoading();
                 this.showPanels();
+                this.updateLegend();
+                this.fileScanEventIndices = this.data.events
+                  .map((e, idx) => e.event_type === 'file_scan' ? idx : -1)
+                  .filter(idx => idx !== -1);
+                const fileScanSlider = document.getElementById('fileScanSlider');
+                const fileScanSliderContainer = document.getElementById('file-scan-slider-container');
+                const fileScanSliderValue = document.getElementById('fileScanSliderValue');
+                if (this.fileScanEventIndices.length > 0) {
+                  fileScanSlider.max = this.fileScanEventIndices.length - 1;
+                  fileScanSlider.value = 0;
+                  fileScanSliderValue.textContent = '1';
+                  fileScanSliderContainer.style.display = '';
+                  fileScanSlider.addEventListener('input', (e) => {
+                    const idx = parseInt(e.target.value);
+                    fileScanSliderValue.textContent = (idx + 1).toString();
+                    // Jump to the corresponding file scan event in the main timeline
+                    this.currentEventIndex = this.fileScanEventIndices[idx];
+                    this.updateVisualization();
+                  });
+                } else {
+                  fileScanSliderContainer.style.display = 'none';
+                }
             }
 
             setupScene() {
@@ -787,7 +850,7 @@
                 
                 // Allow some movement for inspector view while maintaining focus
                 this.controls.enablePan = true; // Enable panning for user control
-                this.controls.minDistance = 30; // Minimum zoom distance
+                this.controls.minDistance = 20; // Minimum zoom distance
                 this.controls.maxDistance = 150; // Maximum zoom distance
                 this.controls.minPolarAngle = Math.PI / 6; // Allow more vertical rotation
                 this.controls.maxPolarAngle = Math.PI / 2; // Limit vertical rotation
@@ -805,8 +868,8 @@
                 window.addEventListener('resize', () => this.onWindowResize());
 
                 // Mouse interaction
-                this.renderer.domElement.addEventListener('mousemove', (event) => this.onMouseMove(event));
-                this.renderer.domElement.addEventListener('mouseleave', () => this.hideHoverPanel());
+                this.renderer.domElement.addEventListener('mousemove', (event) => this.handleSunburstMouseMove(event));
+                this.renderer.domElement.addEventListener('mouseleave', () => this.clearSunburstHighlight());
 
                 // Timeline controls
                 document.getElementById('timeline-slider').addEventListener('input', (e) => {
@@ -856,14 +919,6 @@
                 ringThicknessSlider.addEventListener('input', (e) => {
                     this.ringThickness = parseInt(e.target.value);
                     ringThicknessValue.textContent = this.ringThickness;
-                    this.updateVisualization();
-                });
-
-                const zSpacingSlider = document.getElementById('z-spacing-slider');
-                const zSpacingValue = document.getElementById('z-spacing-value');
-                zSpacingSlider.addEventListener('input', (e) => {
-                    this.zSpacing = parseInt(e.target.value);
-                    zSpacingValue.textContent = this.zSpacing;
                     this.updateVisualization();
                 });
             }
@@ -931,13 +986,13 @@
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
                     this.data = await response.json();
-                    console.log('Data loaded successfully:', {
-                        hasData: !!this.data,
-                        hasEvents: !!(this.data && this.data.events),
-                        eventCount: this.data && this.data.events ? this.data.events.length : 0,
-                        eventTypes: this.data && this.data.metadata ? this.data.metadata.event_types : {},
-                        fileScanCount: this.data && this.data.events ? this.data.events.filter(e => e.event_type === 'file_scan').length : 0
-                    });
+                    // console.log('Data loaded successfully:', {
+                    //     hasData: !!this.data,
+                    //     hasEvents: !!(this.data && this.data.events),
+                    //     eventCount: this.data && this.data.events ? this.data.events.length : 0,
+                    //     eventTypes: this.data && this.data.metadata ? this.data.metadata.event_types : {},
+                    //     fileScanCount: this.data && this.data.events ? this.data.events.filter(e => e.event_type === 'file_scan').length : 0
+                    // });
                     document.getElementById('current-db-file').textContent = this.currentDbFile;
                     this.initializeTimeline();
                     this.updateMilestoneDropdown();
@@ -1004,11 +1059,11 @@
 
 
             initializeTimeline() {
-                console.log('Initializing timeline with data:', {
-                    hasData: !!this.data,
-                    hasEvents: !!(this.data && this.data.events),
-                    eventCount: this.data && this.data.events ? this.data.events.length : 0
-                });
+                // console.log('Initializing timeline with data:', {
+                //     hasData: !!this.data,
+                //     hasEvents: !!(this.data && this.data.events),
+                //     eventCount: this.data && this.data.events ? this.data.events.length : 0
+                // });
                 
                 if (!this.data || !this.data.events || this.data.events.length === 0) {
                     this.showError('No timeline data available');
@@ -1045,14 +1100,14 @@
 
                 // Show events up to current index
                 const eventsToShow = this.data.events.slice(0, this.currentEventIndex + 1);
-                console.log('updateVisualization called:', {
-                    totalEvents: this.data.events.length,
-                    currentEventIndex: this.currentEventIndex,
-                    eventsToShow: eventsToShow.length,
-                    showSunburst: this.showSunburst,
-                    showGantt: this.showGantt,
-                    showConnections: this.showConnections
-                });
+                // console.log('updateVisualization called:', {
+                //     totalEvents: this.data.events.length,
+                //     currentEventIndex: this.currentEventIndex,
+                //     eventsToShow: eventsToShow.length,
+                //     showSunburst: this.showSunburst,
+                //     showGantt: this.showGantt,
+                //     showConnections: this.showConnections
+                // });
                 
                 if (this.showSunburst) {
                     this.createSunburstVisualization(eventsToShow);
@@ -1084,6 +1139,12 @@
                 const fileScanEvents = events.filter(e => e.event_type === 'file_scan');
                 console.log('File scan events found:', fileScanEvents.length);
                 
+                // In createSunburstVisualization, compute minTime, maxTime, minY, maxY as in Gantt
+                const scanTimes = fileScanEvents.map(e => e.timestamp);
+                const minTime = Math.min(...scanTimes);
+                const maxTime = Math.max(...scanTimes);
+                const minY = 0, maxY = 100;
+                
                 events.forEach((event, index) => {
                     console.log(`Processing event ${index}:`, {
                         eventType: event.event_type,
@@ -1091,141 +1152,165 @@
                         treeStructureKeys: event.metadata && event.metadata.tree_structure ? Object.keys(event.metadata.tree_structure) : []
                     });
                     
-                    if (event.event_type === 'file_scan' && event.metadata.tree_structure) {
+                    if (event.event_type === 'file_scan' && event.metadata && event.metadata.tree_structure) {
                         // Position all events at the same Z position (centered) - timeline scrolls by
                         const zPosition = 0; // Fixed center position
                         console.log(`Creating sunburst for file_scan event at index ${index}, zPosition ${zPosition}`);
-                        this.createSunburstAtPosition(event.metadata.tree_structure, zPosition, index);
+                        this.createSunburstAtPosition(event.metadata.tree_structure, zPosition, index, this.timestampToY(event.timestamp, minTime, maxTime, minY, maxY));
                         this.createTextLabel(new Date(event.timestamp * 1000).toLocaleDateString(), zPosition, 'file_scan');
                     }
                 });
             }
 
-            createSunburstAtPosition(treeData, zPosition, eventIndex) {
-                console.log('Creating sunburst at position:', {
-                    zPosition: zPosition,
-                    eventIndex: eventIndex,
-                    treeData: treeData,
-                    treeDataKeys: Object.keys(treeData || {}),
-                    hasChildren: !!(treeData && treeData.children),
-                    childrenCount: treeData && treeData.children ? treeData.children.length : 0
-                });
-                
-                // Position sunburst at the center, close to milestones
-                const sunburstX = 0; // Center position
-                
-                this.createSunburstRecursive(
-                    treeData, 
-                    0, 
-                    Math.PI * 2, 
-                    5, 
-                    0, 
-                    new THREE.Vector3(sunburstX, 0, zPosition), 
-                    eventIndex
-                );
+            createSunburstAtPosition(treeData, zPosition, eventIndex, yPosition) {
+                const group = this.createSunburst(treeData, eventIndex, 0); // zOffset = 0
+                group.position.y = yPosition;
+                this.sunburstGroup.add(group);
             }
 
-            createSunburstRecursive(node, startAngle, endAngle, innerRadius, outerRadius, position, eventIndex) {
-                const angleSpan = endAngle - startAngle;
-                const radius = outerRadius || innerRadius + this.ringThickness;
-                const opacity = Math.max(0.6, 1 - eventIndex * 0.05);
-                
-                // Handle the actual data structure from unified_timeline.json
-                // Root node has properties directly, children have type/data structure
-                const nodeData = node.data || node;
-                const nodeType = node.type || (nodeData.type || 'folder'); // Default to folder for root
-                const nodeName = nodeData.name || node.name || 'Unknown';
-                const nodeSize = nodeData.size || node.size || 1;
-                const nodeMimeType = nodeData.mime_type || node.mime_type;
-                    
-                // Create ring segment
-                const geometry = new THREE.RingGeometry(
-                    innerRadius, 
-                    radius, 
-                    32, 
-                    1, 
-                    startAngle, 
-                    angleSpan
-                );
-                
-                // Debug statement for sunburst creation
-                console.log('Creating sunburst segment:', {
-                    nodeType: nodeType,
-                    nodeName: nodeName,
-                    nodeSize: nodeSize,
-                    nodeMimeType: nodeMimeType,
-                    startAngle: startAngle.toFixed(3),
-                    endAngle: endAngle.toFixed(3), 
-                    angleSpan: angleSpan.toFixed(3),
-                    innerRadius: innerRadius.toFixed(1),
-                    outerRadius: radius.toFixed(1),
-                    position: {
-                        x: position.x.toFixed(1),
-                        y: position.y.toFixed(1), 
-                        z: position.z.toFixed(1)
-                    },
-                    eventIndex: eventIndex,
-                    opacity: opacity.toFixed(2)
-                });
-                
-                // Get color based on type and mime_type
-                let color;
-                if (nodeType === 'folder') {
-                    color = this.fileColors.folder;
-                } else {
-                    color = this.fileColors[nodeMimeType] || this.fileColors.default;
-                }
+            // Advanced sunburst logic
+            createSunburst(treeData, eventIndex, zOffset) {
+                const group = new THREE.Group();
+                const minAngleDeg = this.minAngleDeg || 2;
+                const minAngleRad = minAngleDeg * Math.PI / 180;
+                const ringThickness = this.ringThickness;
+                const ringGap = 2;
 
-                const material = new THREE.MeshLambertMaterial({
-                    color: color,
-                    transparent: true,
-                    opacity: opacity,
-                    side: THREE.DoubleSide,
-                    emissive: new THREE.Color(color).multiplyScalar(0.1),
-                    emissiveIntensity: 0.2
-                });
+                // Color cache for this sunburst
+                this.colorCache = this.colorCache || new Map();
+                this.segmentMeshes = new Map();
+                this.connectionLinesByChild = new Map();
+                this.connectionLines = [];
 
-                const ring = new THREE.Mesh(geometry, material);
-                ring.position.copy(position);
-                ring.userData = { 
-                    node: nodeData, 
-                    type: 'sunburst', 
-                    eventIndex: eventIndex,
-                    originalOpacity: opacity
+                // Helper to get the center point of a segment at a given radius and angle
+                const getSegmentCenter = (innerRadius, outerRadius, startAngle, endAngle, z) => {
+                    const angle = (startAngle + endAngle) / 2;
+                    const radius = (innerRadius + outerRadius) / 2;
+                    return new THREE.Vector3(
+                        Math.cos(angle) * radius,
+                        Math.sin(angle) * radius,
+                        z
+                    );
                 };
-                
-                this.sunburstGroup.add(ring);
 
-                // Process children - handle the actual data structure
-                // Root node has children directly, child nodes have children in their data
-                const children = node.children || nodeData.children || [];
-                if (children && children.length > 0) {
-                    const totalValue = children.reduce((sum, child) => {
-                        const childData = child.data || child;
-                        return sum + (childData.size || 1);
-                    }, 0);
-                    
-                    let currentAngle = startAngle;
-                    const minAngleRad = this.minAngleDeg * Math.PI / 180;
-
-                    children.forEach(child => {
-                        const childData = child.data || child;
-                        const childSize = childData.size || 1;
-                        const childAngleSpan = Math.max(minAngleRad, (childSize / totalValue) * angleSpan);
-                        
-                        this.createSunburstRecursive(
-                            child, // Pass the original child object to preserve structure
-                            currentAngle,
-                            currentAngle + childAngleSpan,
-                            radius + 2,
-                            radius + 2 + this.ringThickness,
-                            position,
-                            eventIndex
-                        );
-                        
-                        currentAngle += childAngleSpan;
+                const createRingSegment = (node, innerRadius, outerRadius, startAngle, endAngle, depth, colorOverride = null) => {
+                    const segments = 64;
+                    const geometry = new THREE.RingGeometry(
+                        innerRadius,
+                        outerRadius,
+                        segments,
+                        1,
+                        startAngle,
+                        endAngle - startAngle
+                    );
+                    let baseColor = colorOverride || this.getColorForNode(node);
+                    if (typeof baseColor === 'string' && !baseColor.startsWith('#')) {
+                        baseColor = `#${baseColor}`;
+                    }
+                    const color = new THREE.Color(baseColor);
+                    const material = new THREE.MeshLambertMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.8
                     });
-                }
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.z = depth * 2; // Separate each ring in Z within a sunburst
+                    mesh.receiveShadow = true;
+                    mesh.castShadow = true;
+                    mesh.userData = { 
+                        node, 
+                        eventIndex, 
+                        depth, 
+                        innerRadius, 
+                        outerRadius, 
+                        startAngle, 
+                        endAngle,
+                        baseColor: baseColor,
+                        originalColor: baseColor
+                    };
+                    return mesh;
+                };
+
+                let segmentCount = 0;
+                const buildSunburst = (node, innerRadius, outerRadius, startAngle, endAngle, depth = 0, siblingIndex = 0, siblingCount = 1, parentInfo = null, parentNode = null) => {
+                    // Debug log for node properties
+                    console.log(`[SUNBURST-DEBUG] buildSunburst: name=${node.name}, type=${node.type}, size=${node.size}, value=${node.value}, children=${node.children ? node.children.length : 0}, depth=${depth}`);
+                    node.parent = parentNode;
+                    // [SUNBURST-DEBUG] Log node info and recursion
+                    const children = node.children || [];
+                    console.log(`[SUNBURST-DEBUG] buildSunburst: name='${node.name}', type='${node.type}', children=${children.length}, depth=${depth}, innerRadius=${innerRadius}, outerRadius=${outerRadius}, startAngle=${startAngle}, endAngle=${endAngle}`);
+                    let baseColor = this.getColorForNode ? this.getColorForNode(node) : '#9e9e9e';
+                    if (node.type === 'file' && siblingCount > 1) {
+                        const hsl = {};
+                        new THREE.Color(baseColor).getHSL(hsl);
+                        hsl.l = 0.45 + 0.2 * (siblingIndex / (siblingCount - 1));
+                        const color = new THREE.Color();
+                        color.setHSL(hsl.h, hsl.s, hsl.l);
+                        baseColor = `#${color.getHexString()}`;
+                    }
+                    const mesh = createRingSegment(node, innerRadius, outerRadius, startAngle, endAngle, depth, baseColor);
+                    group.add(mesh);
+                    segmentCount++;
+                    this.segmentMeshes.set(node, mesh);
+                    // Draw connection line if parentInfo is provided
+                    if (parentInfo) {
+                        const parentCenter = getSegmentCenter(
+                            parentInfo.innerRadius, parentInfo.outerRadius, parentInfo.startAngle, parentInfo.endAngle, (depth - 1) * 2 + zOffset
+                        );
+                        const childCenter = getSegmentCenter(
+                            innerRadius, outerRadius, startAngle, endAngle, depth * 2 + zOffset
+                        );
+                        const midRadius = (parentInfo.outerRadius + innerRadius) / 2 + ringGap * 0.5;
+                        const midAngle = (parentInfo.endAngle + startAngle) / 2;
+                        const controlPoint = new THREE.Vector3(
+                            Math.cos(midAngle) * midRadius,
+                            Math.sin(midAngle) * midRadius,
+                            (parentCenter.z + childCenter.z) / 2
+                        );
+                        const curve = new THREE.QuadraticBezierCurve3(parentCenter, controlPoint, childCenter);
+                        const points = curve.getPoints(32);
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.3, transparent: true }));
+                        group.add(line);
+                        line.userData = {
+                            type: 'connection',
+                            parentNode: parentInfo.node,
+                            childNode: node
+                        };
+                        this.connectionLines.push(line);
+                        this.connectionLinesByChild.set(node, line);
+                    }
+                    // Process children
+                    if (children.length > 0) {
+                        const n = children.length;
+                        const totalSize = children.reduce((sum, child) => sum + (child.size || 1), 0);
+                        const totalMinAngle = n * minAngleRad;
+                        const availableAngle = Math.max(0, (endAngle - startAngle) - totalMinAngle);
+                        let currentAngle = startAngle;
+                        children.forEach((child, i) => {
+                            const childSize = child.size || 1;
+                            const angleSpan = minAngleRad + (availableAngle * (childSize / totalSize));
+                            const childEndAngle = currentAngle + angleSpan;
+                            buildSunburst(
+                                child,
+                                outerRadius + ringGap,
+                                outerRadius + ringGap + ringThickness,
+                                currentAngle,
+                                childEndAngle,
+                                depth + 1,
+                                i,
+                                n,
+                                { innerRadius, outerRadius, startAngle, endAngle, node },
+                                node
+                            );
+                            currentAngle = childEndAngle;
+                        });
+                    }
+                };
+                // Start at radius 5 for unified visualizer
+                buildSunburst(treeData, 2, 2 + ringThickness, 0, Math.PI * 2);
+                console.log(`[SUNBURST-DEBUG] Total segments created and added: ${segmentCount}`);
+                return group;
             }
 
             // Map timestamp to Y position (linear between min/max)
@@ -1248,6 +1333,13 @@
                 const endTimes = milestoneEvents.map(e => (e.metadata.end_time || (e.metadata.start_time || e.timestamp) + (e.metadata.duration || 86400)));
                 const minTime = Math.min(...times);
                 const maxTime = Math.max(...endTimes);
+                // Log Y location for each file scan event
+                events.forEach((event, idx) => {
+                    if (event.event_type === 'file_scan') {
+                        const y = this.timestampToY(event.timestamp, minTime, maxTime, minY, maxY);
+                        console.log(`[DEBUG] File scan event at timestamp ${event.timestamp} mapped to Y=${y}`);
+                    }
+                });
                 // Draw vertical axis
                 const axisGeom = new THREE.CylinderGeometry(axisWidth, axisWidth, maxY - minY + 10, 32);
                 const axisMat = new THREE.MeshBasicMaterial({ color: axisColor });
@@ -1487,31 +1579,40 @@
 
             updateLegend() {
                 const legendContent = document.getElementById('legend-content');
+                if (!legendContent) return;
                 const categories = {
-                    'Programming': ['text/javascript', 'text/x-python', 'text/html', 'text/css'],
-                    'Documents': ['application/json', 'text/markdown', 'application/pdf'],
-                    'Other': ['folder', 'default']
+                    'Programming': ['text/javascript', 'text/x-python', 'text/html', 'text/css', 'application/json', 'text/markdown'],
+                    'Documents': ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-outlook'],
+                    'Media': ['image/', 'video/', 'audio/'],
+                    'Other': ['text/', 'folder', 'default']
                 };
 
                 let html = '';
                 for (const [category, types] of Object.entries(categories)) {
                     html += `<div class="legend-category">${category}</div>`;
                     types.forEach(type => {
-                        const color = this.fileColors[type];
-                        const label = type.split('/').pop()
-                            .replace('javascript', 'JavaScript')
+                        const color = this.colorMap[type];
+                        let label = type.split('/').pop().replace('application/vnd.', '').replace('openxmlformats-officedocument.', '')
+                            .replace('wordprocessingml.document', 'Word')
+                            .replace('spreadsheetml.sheet', 'Excel')
+                            .replace('ms-outlook', 'Outlook')
                             .replace('x-python', 'Python')
+                            .replace('javascript', 'JavaScript')
                             .replace('html', 'HTML')
                             .replace('css', 'CSS')
                             .replace('json', 'JSON')
                             .replace('markdown', 'Markdown')
                             .replace('pdf', 'PDF')
+                            .replace('image', 'Images')
+                            .replace('video', 'Video')
+                            .replace('audio', 'Audio')
+                            .replace('text', 'Text Files')
                             .replace('folder', 'Folders')
-                            .replace('default', 'Other');
-                        
+                            .replace('default', 'Other Files');
                         html += `
                             <div class="legend-item">
-                                <div class="color-box" style="background-color: #${color.toString(16).padStart(6, '0')};"></div>
+                                <div class="color-box" style="background-color: ${color};"></div>
                                 <span>${label}</span>
                             </div>
                         `;
@@ -1520,127 +1621,163 @@
                 legendContent.innerHTML = html;
             }
 
-            onMouseMove(event) {
+            handleSunburstMouseMove(event) {
                 const rect = this.renderer.domElement.getBoundingClientRect();
                 this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
                 this.raycaster.setFromCamera(this.mouse, this.camera);
-                
                 const allObjects = [
                     ...this.sunburstGroup.children,
-                    ...this.ganttGroup.children,
-                    ...this.connectionGroup.children
+                    ...(this.connectionLines || [])
                 ];
-                
-                const intersects = this.raycaster.intersectObjects(allObjects);
+                const intersects = this.raycaster.intersectObjects(allObjects, true);
 
-                // Reset opacity for all objects
-                allObjects.forEach(obj => {
-                    if (obj.material && obj.userData.originalOpacity !== undefined) {
-                        obj.material.opacity = obj.userData.originalOpacity;
+                // Revert all previously highlighted objects
+                if (!this.highlightedObjects) this.highlightedObjects = new Set();
+                this.highlightedObjects.forEach(obj => {
+                    // Revert segments
+                    if (obj.isMesh) {
+                        let originalColor = obj.userData && obj.userData.originalColor;
+                        if (typeof originalColor === 'string' && !originalColor.startsWith('#')) {
+                            originalColor = `#${originalColor}`;
+                        }
+                        if (originalColor) {
+                            obj.material.color.set(originalColor);
+                        }
+                        obj.material.opacity = 0.8;
+                    }
+                    // Revert lines
+                    if (obj.isLine) {
+                        obj.material.color.set(0xffffff);
+                        obj.material.opacity = 0.3;
                     }
                 });
+                this.highlightedObjects.clear();
 
                 if (intersects.length > 0) {
                     const intersected = intersects[0].object;
-                    
-                    // Highlight hovered object
-                    if (intersected.material) {
-                        intersected.material.opacity = 1.0;
+                    // Highlight path if hovering a segment
+                    if (intersected.userData && intersected.userData.node) {
+                        let node = intersected.userData.node;
+                        while (node) {
+                            // Highlight segment
+                            const mesh = this.segmentMeshes && this.segmentMeshes.get(node);
+                            if (mesh) {
+                                // Store current color if not already stored
+                                if (!mesh.userData.originalColor) {
+                                    let currentColor = mesh.material.color.getHexString();
+                                    if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                        currentColor = `#${currentColor}`;
+                                    }
+                                    mesh.userData.originalColor = currentColor;
+                                }
+                                mesh.material.color.set('#00ff66');
+                                mesh.material.opacity = 1.0;
+                                this.highlightedObjects.add(mesh);
+                            }
+                            // Highlight connection line from parent to node
+                            const line = this.connectionLinesByChild && this.connectionLinesByChild.get(node);
+                            if (line) {
+                                line.material.color.set('#00ff66');
+                                line.material.opacity = 1.0;
+                                this.highlightedObjects.add(line);
+                            }
+                            node = node.parent;
+                        }
+                        this.showSunburstDetailsPanel(intersected.userData.node, event.clientX, event.clientY);
+                        this.hoveredObject = intersected;
+                    } else if (intersected.userData && intersected.userData.type === 'connection') {
+                        // If hovering a connection line, highlight it and its child/parent segments
+                        const line = intersected;
+                        line.material.color.set('#00ff66');
+                        line.material.opacity = 1.0;
+                        this.highlightedObjects.add(line);
+                        // Highlight child and parent segments
+                        const childMesh = this.segmentMeshes && this.segmentMeshes.get(line.userData.childNode);
+                        if (childMesh) {
+                            if (!childMesh.userData.originalColor) {
+                                let currentColor = childMesh.material.color.getHexString();
+                                if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                    currentColor = `#${currentColor}`;
+                                }
+                                childMesh.userData.originalColor = currentColor;
+                            }
+                            childMesh.material.color.set('#00ff66');
+                            childMesh.material.opacity = 1.0;
+                            this.highlightedObjects.add(childMesh);
+                        }
+                        const parentMesh = this.segmentMeshes && this.segmentMeshes.get(line.userData.parentNode);
+                        if (parentMesh) {
+                            if (!parentMesh.userData.originalColor) {
+                                let currentColor = parentMesh.material.color.getHexString();
+                                if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                    currentColor = `#${currentColor}`;
+                                }
+                                parentMesh.userData.originalColor = currentColor;
+                            }
+                            parentMesh.material.color.set('#00ff66');
+                            parentMesh.material.opacity = 1.0;
+                            this.highlightedObjects.add(parentMesh);
+                        }
+                        this.showSunburstDetailsPanel(null);
                     }
-                    
-                    this.showHoverPanel(intersected, event.clientX, event.clientY);
-                    this.hoveredObject = intersected;
                 } else {
-                    this.hideHoverPanel();
+                    this.showSunburstDetailsPanel(null);
                     this.hoveredObject = null;
                 }
             }
 
-            showHoverPanel(object, x, y) {
+            clearSunburstHighlight() {
+                if (!this.highlightedObjects) return;
+                this.highlightedObjects.forEach(obj => {
+                    if (obj.isMesh) {
+                        let originalColor = obj.userData && obj.userData.originalColor;
+                        if (typeof originalColor === 'string' && !originalColor.startsWith('#')) {
+                            originalColor = `#${originalColor}`;
+                        }
+                        if (originalColor) {
+                            obj.material.color.set(originalColor);
+                        }
+                        obj.material.opacity = 0.8;
+                    }
+                    if (obj.isLine) {
+                        obj.material.color.set(0xffffff);
+                        obj.material.opacity = 0.3;
+                    }
+                });
+                this.highlightedObjects.clear();
+                this.showSunburstDetailsPanel(null);
+            }
+
+            showSunburstDetailsPanel(node, x, y) {
+                // Use the hover-info panel for details
                 const panel = document.getElementById('details-panel');
                 const title = document.getElementById('details-title');
                 const content = document.getElementById('details-content');
-                
-                let titleText = 'Unknown';
-                let contentText = '';
-
-                if (object.userData.node) {
-                    const node = object.userData.node;
-                    titleText = node.name || 'File/Folder';
-                    contentText = `
-                        <div><span class="label">Type:</span> <span class="value">${node.type || 'file'}</span></div>
-                        <div><span class="label">Size:</span> <span class="value">${this.formatBytes(node.size || 0)}</span></div>
-                        ${node.mime_type ? `<div><span class="label">MIME:</span> <span class="value">${node.mime_type}</span></div>` : ''}
-                    `;
-                } else if (object.userData.milestone) {
-                    const milestone = object.userData.milestone;
-                    titleText = milestone.title || 'Milestone';
-                    contentText = `
-                        <div><span class="label">Category:</span> <span class="value">${milestone.category}</span></div>
-                        <div><span class="label">Priority:</span> <span class="value">${milestone.priority}</span></div>
-                        <div><span class="label">Confidence:</span> <span class="value">${(milestone.confidence * 100).toFixed(0)}%</span></div>
-                        <div style="margin-top: 8px;"><span class="value">${milestone.description}</span></div>
-                    `;
-                } else if (object.userData.type === 'connection') {
-                    titleText = 'Correlation';
-                    contentText = `
-                        <div><span class="label">Strength:</span> <span class="value">${(object.userData.strength * 100).toFixed(0)}%</span></div>
-                        <div><span class="value">Links file changes to milestones</span></div>
-                    `;
+                if (!node) {
+                    title.textContent = 'Hover for details';
+                    content.innerHTML = '';
+                    panel.style.opacity = '0';
+                    return;
                 }
-
-                title.textContent = titleText;
-                content.innerHTML = contentText;
-                
-                panel.style.left = `${Math.min(x + 20, window.innerWidth - 320)}px`;
-                panel.style.top = `${Math.min(y + 20, window.innerHeight - 200)}px`;
+                title.textContent = node.name || 'File/Folder';
+                let html = `<div><span class='label'>Type:</span> <span class='value'>${node.type || 'file'}</span></div>`;
+                if (node.size) {
+                    html += `<div><span class='label'>Size:</span> <span class='value'>${this.formatBytes(node.size)}</span></div>`;
+                }
+                if (node.type === 'file') {
+                    if (node.mime_type) html += `<div><span class='label'>MIME:</span> <span class='value'>${node.mime_type}</span></div>`;
+                    if (node.file_hash) html += `<div><span class='label'>Hash:</span> <span class='value'>${node.file_hash}</span></div>`;
+                } else {
+                    if (node.file_count) html += `<div><span class='label'>Files:</span> <span class='value'>${node.file_count}</span></div>`;
+                }
+                content.innerHTML = html;
+                // Position panel near mouse
+                if (typeof x === 'number' && typeof y === 'number') {
+                    panel.style.left = `${Math.min(x + 20, window.innerWidth - 320)}px`;
+                    panel.style.top = `${Math.min(y + 20, window.innerHeight - 200)}px`;
+                }
                 panel.style.opacity = '1';
-            }
-
-            hideHoverPanel() {
-                const panel = document.getElementById('details-panel');
-                panel.style.opacity = '0';
-            }
-
-            formatBytes(bytes) {
-                if (bytes === 0) return '0 B';
-                const k = 1024;
-                const sizes = ['B', 'KB', 'MB', 'GB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-            }
-
-            focusOnMilestone(milestoneEvent) {
-                const eventIndex = this.data.events.indexOf(milestoneEvent);
-                if (eventIndex !== -1) {
-                    this.setCurrentEvent(eventIndex);
-                    
-                    // Inspector view - camera will automatically position to the milestone
-                    this.updateCameraPosition();
-                }
-            }
-
-            animateCameraTo(position, target) {
-                const startPosition = this.camera.position.clone();
-                const endPosition = position.clone();
-                
-                let progress = 0;
-                const animate = () => {
-                    progress += 0.02;
-                    
-                    if (progress <= 1) {
-                        this.camera.position.lerpVectors(startPosition, endPosition, progress);
-                        this.camera.lookAt(target);
-                        requestAnimationFrame(animate);
-                    } else {
-                        this.controls.target.copy(target);
-                        this.controls.update();
-                    }
-                };
-                
-                animate();
             }
 
             play() {
@@ -1808,6 +1945,76 @@
                 this.controls.target.set(2.5, targetY, 0);
                 this.camera.lookAt(this.controls.target);
                 this.controls.update();
+            }
+
+            // Add to UnifiedTimelineVisualizer prototype:
+            getColorForNode(node) {
+                // Check cache first
+                if (this.colorCache.has(node)) {
+                    return this.colorCache.get(node);
+                }
+                let color;
+                if (node.type === 'folder') {
+                    color = this.colorMap['folder'];
+                } else {
+                    const mimeType = node.mime_type;
+                    if (!mimeType) {
+                        color = this.colorMap['default'];
+                    } else {
+                        // 1. Exact match
+                        if (this.colorMap[mimeType]) {
+                            color = this.colorMap[mimeType];
+                        } else {
+                            // 2. Check file extension for common types
+                            const extension = node.name && node.name.split('.').pop().toLowerCase();
+                            const extensionMap = {
+                                'msg': this.colorMap['application/vnd.ms-outlook.msg'],
+                                'eml': this.colorMap['message/rfc822'],
+                                'zip': this.colorMap['application/zip'],
+                                'rar': this.colorMap['application/x-rar-compressed'],
+                                '7z': this.colorMap['application/x-7z-compressed'],
+                                'tar': this.colorMap['application/x-tar'],
+                                'gz': this.colorMap['application/gzip'],
+                                'pdf': this.colorMap['application/pdf'],
+                                'docx': this.colorMap['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+                                'xlsx': this.colorMap['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+                                'doc': this.colorMap['application/vnd.ms-outlook'],
+                                'txt': this.colorMap['text/'],
+                                'md': this.colorMap['text/markdown']
+                            };
+                            if (extension && extensionMap[extension]) {
+                                color = extensionMap[extension];
+                            } else {
+                                // 3. Prefix match (e.g., image/, text/)
+                                let found = false;
+                                for (const [pattern, patternColor] of Object.entries(this.colorMap)) {
+                                    if (pattern.endsWith('/') && mimeType.startsWith(pattern)) {
+                                        color = patternColor;
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found) {
+                                    color = this.colorMap['default'];
+                                }
+                            }
+                        }
+                    }
+                }
+                // Always prefix with #
+                if (typeof color === 'string' && !color.startsWith('#')) {
+                    color = `#${color}`;
+                }
+                // HARDEN: If color is empty, null, or not a valid hex, force to #bdc3c7
+                if (!color || typeof color !== 'string' || !/^#([0-9a-fA-F]{3}){1,2}$/.test(color)) {
+                    console.warn('[Sunburst] Fallback to default color for node:', node, 'Got color:', color);
+                    color = '#bdc3c7';
+                }
+                // Debug: Log every node and its color
+                console.log('[Sunburst] Node color:', { name: node.name, type: node.type, mime: node.mime_type, color });
+                // Cache the color
+                this.colorCache.set(node, color);
+                return color;
             }
         }
 
