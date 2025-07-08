@@ -560,7 +560,7 @@
                 
                 // Scene groups
                 this.sunburstGroup = new THREE.Group();
-                this.sunburstGroup.rotation.x = Math.PI / 2; // Rotate 90 degrees to horizontal
+                // this.sunburstGroup.rotation.y = 0;
                 this.ganttGroup = new THREE.Group();
                 this.connectionGroup = new THREE.Group();
                 
@@ -1165,6 +1165,7 @@
             createSunburstAtPosition(treeData, zPosition, eventIndex, yPosition) {
                 const group = this.createSunburst(treeData, eventIndex, 0); // zOffset = 0
                 group.position.y = yPosition;
+                group.rotation.x = Math.PI / 2;
                 this.sunburstGroup.add(group);
             }
 
@@ -1211,7 +1212,8 @@
                     const material = new THREE.MeshLambertMaterial({
                         color: color,
                         transparent: true,
-                        opacity: 0.8
+                        opacity: 0.8,
+                        side: THREE.DoubleSide
                     });
                     const mesh = new THREE.Mesh(geometry, material);
                     mesh.position.z = depth * 2; // Separate each ring in Z within a sunburst
