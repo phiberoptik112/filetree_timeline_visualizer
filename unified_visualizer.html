@@ -1165,7 +1165,7 @@
             createSunburstAtPosition(treeData, zPosition, eventIndex, yPosition) {
                 const group = this.createSunburst(treeData, eventIndex, 0); // zOffset = 0
                 group.position.y = yPosition;
-                group.rotation.x = Math.PI / 2;
+                group.rotation.x = Math.PI * 1.5; // radians notation, 270 degrees 
                 this.sunburstGroup.add(group);
             }
 
