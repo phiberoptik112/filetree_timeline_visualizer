@@ -15,7 +15,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f1419 0%, #1a202c 50%, #2d3748 100%);
+            background: radial-gradient(ellipse at center, #1a1a2e 0%, #16213e 50%, #0f1419 100%);
             overflow: hidden;
             color: white;
         }
@@ -29,6 +29,24 @@
         #threejs-container {
             width: 100%;
             height: 100%;
+            position: relative;
+        }
+
+        #threejs-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 50% 50%, rgba(74, 144, 226, 0.1) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        #threejs-container canvas {
+            position: relative;
+            z-index: 2;
         }
 
         .panel {
@@ -391,6 +409,7 @@
                     <button class="control-button" id="play-btn">▶ Play</button>
                     <button class="control-button" id="pause-btn">⏸ Pause</button>
                     <button class="control-button" id="reset-btn">⏮ Reset</button>
+                    <button class="control-button" id="jump-to-filescan-btn">📁 File Scans</button>
                 </div>
             </div>
 
@@ -404,10 +423,6 @@
                 <label>Ring Thickness:
                     <input type="range" id="ring-thickness-slider" min="2" max="20" value="6">
                     <span id="ring-thickness-value">6</span>
-                </label>
-                <label>Z Spacing:
-                    <input type="range" id="z-spacing-slider" min="5" max="50" value="20">
-                    <span id="z-spacing-value">20</span>
                 </label>
             </div>
 
@@ -440,6 +455,21 @@
                 <button id="generate-cmd-btn" class="control-button">Generate Command</button>
                 
                 <textarea id="generated-cmd-output" rows="4" style="width: 100%; margin-top: 15px; background: #0f1419; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: #4CAF50; font-family: monospace; font-size: 11px; display: none; padding: 8px;"></textarea>
+            </div>
+
+            <!-- Milestone Color Controls -->
+            <div class="control-section">
+                <h4>Milestone Bar Colors</h4>
+                <label for="milestone-select" style="font-size: 12px; margin-bottom: 4px; display: block;">Select Milestone:</label>
+                <select id="milestone-select" style="width: 100%; margin-bottom: 8px;"></select>
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <label for="intended-color-picker" style="font-size: 12px;">Intended (Outline):</label>
+                    <input type="color" id="intended-color-picker" value="#ff00ff">
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label for="actual-color-picker" style="font-size: 12px;">Actual (Solid):</label>
+                    <input type="color" id="actual-color-picker" value="#ff00ff">
+                </div>
             </div>
         </div>
 
@@ -482,24 +512,33 @@
         </div>
 
         <div class="z-axis-indicator hidden" id="z-axis-indicator">
-            <h4 style="margin-bottom: 10px; color: #4CAF50;">Z-Axis</h4>
+            <h4 style="margin-bottom: 10px; color: #4CAF50;">Inspector View</h4>
             <div class="axis-label">
                 <div class="axis-color" style="background: #4CAF50;"></div>
-                <span>Files</span>
+                <span>File Scans</span>
             </div>
             <div class="axis-label">
                 <div class="axis-color" style="background: #3B82F6;"></div>
                 <span>Milestones</span>
             </div>
             <div style="margin-top: 10px; font-size: 11px; opacity: 0.6;">
-                Time flows forward<br>
-                along Z-axis
+                Camera follows timeline<br>
+                Vertical inspection<br>
+                Focus on current event
             </div>
         </div>
 
         <div class="details-panel" id="details-panel">
             <div class="details-title" id="details-title">Hover for details</div>
             <div class="details-content" id="details-content"></div>
+        </div>
+
+        <!-- Add this below the main timeline controls panel -->
+        <div id="file-scan-slider-container" class="panel" style="position:absolute; left:50%; transform:translateX(-50%); bottom:70px; min-width:220px; max-width:350px; z-index:201; background:rgba(0,0,0,0.7); display:none;">
+          <label style="color:#3B82F6; font-size:13px;">Jump to File Scan:
+            <input type="range" id="fileScanSlider" min="0" max="0" value="0" step="1" style="width:200px;">
+            <span id="fileScanSliderValue">1</span>
+          </label>
         </div>
     </div>
 
@@ -516,9 +555,12 @@
                 this.playInterval = null;
                 this.currentDbFile = 'unified_timeline.json';
                 this.userLoadedFile = false;
+                this.userCameraPosition = null;
+                this.lastUserMove = 0;
                 
                 // Scene groups
                 this.sunburstGroup = new THREE.Group();
+                // this.sunburstGroup.rotation.y = 0;
                 this.ganttGroup = new THREE.Group();
                 this.connectionGroup = new THREE.Group();
                 
@@ -547,6 +589,9 @@
                     'application/json': 0x000000,
                     'text/markdown': 0x083fa1,
                     'application/pdf': 0xff0000,
+                    'text/plain': 0x9e9e9e,
+                    'text/csv': 0x2ecc71,
+                    'application/octet-stream': 0x95a5a6,
                     'folder': 0x4CAF50,
                     'default': 0x9e9e9e
                 };
@@ -561,6 +606,43 @@
                     'default': 0x6B7280
                 };
                 
+                // Color mapping for file types (from unified_timeline_visualizer.html)
+                this.colorMap = {
+                    // Programming languages
+                    'text/javascript': '#f7df1e',  // JavaScript
+                    'application/javascript': '#f7df1e',
+                    'text/x-python': '#5c37ab',  // Python
+                    'text/html': '#e34c26',  // HTML
+                    'text/css': '#15b6b1',  // CSS
+                    'application/json': '#000000',  // JSON
+                    'text/markdown': '#083fa1',  // Markdown
+                    // Documents
+                    'application/pdf': '#ff0000',  // PDF
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '#217346',  // Word
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '#3c6f1d',  // Excel
+                    'application/vnd.ms-outlook': '#d48300',  // Outlook
+                    'application/vnd.ms-outlook.msg': '#d48300',  // Outlook MSG
+                    'message/rfc822': '#d48300',  // Email messages
+                    // Media
+                    'image/': '#ff6b6b',  // Images
+                    'video/': '#9b59b6',  // Video
+                    'audio/': '#3498db',  // Audio
+                    // Archives
+                    'application/zip': '#e67e22',  // ZIP
+                    'application/x-rar-compressed': '#e67e22',  // RAR
+                    'application/x-7z-compressed': '#e67e22',  // 7Z
+                    'application/x-tar': '#e67e22',  // TAR
+                    'application/gzip': '#e67e22',  // GZIP
+                    // Other
+                    'text/': '#95a5a6',  // Text files
+                    'folder': '#a73a81',  // Folders
+                    'default': '#bdc3c7'  // Default gray
+                };
+                // Initialize color cache
+                this.colorCache = new Map();
+                
+                this.fileScanEventIndices = [];
+                
                 this.init();
             }
 
@@ -573,41 +655,65 @@
                 
                 this.hideLoading();
                 this.showPanels();
+                this.updateLegend();
+                this.fileScanEventIndices = this.data.events
+                  .map((e, idx) => e.event_type === 'file_scan' ? idx : -1)
+                  .filter(idx => idx !== -1);
+                const fileScanSlider = document.getElementById('fileScanSlider');
+                const fileScanSliderContainer = document.getElementById('file-scan-slider-container');
+                const fileScanSliderValue = document.getElementById('fileScanSliderValue');
+                if (this.fileScanEventIndices.length > 0) {
+                  fileScanSlider.max = this.fileScanEventIndices.length - 1;
+                  fileScanSlider.value = 0;
+                  fileScanSliderValue.textContent = '1';
+                  fileScanSliderContainer.style.display = '';
+                  fileScanSlider.addEventListener('input', (e) => {
+                    const idx = parseInt(e.target.value);
+                    fileScanSliderValue.textContent = (idx + 1).toString();
+                    // Jump to the corresponding file scan event in the main timeline
+                    this.currentEventIndex = this.fileScanEventIndices[idx];
+                    this.updateVisualization();
+                  });
+                } else {
+                  fileScanSliderContainer.style.display = 'none';
+                }
             }
 
             setupScene() {
                 // Scene
                 this.scene = new THREE.Scene();
-                this.scene.background = new THREE.Color(0x0a0e14);
+                
+                // Remove solid background color for lightbox effect
+                // this.scene.background = new THREE.Color(0x0a0e14);
 
-                // Camera
+                // Camera - Inspector view that follows timeline vertically
                 this.camera = new THREE.PerspectiveCamera(
                     60, 
                     window.innerWidth / window.innerHeight, 
                     1, 
                     20000
                 );
-                this.camera.position.set(100, 100, 200);
-                this.camera.lookAt(0, 0, 0);
+                // Initial camera position - will be updated based on current event
+                this.camera.position.set(2.5, 30, 80);
+                this.camera.lookAt(2.5, 0, 0);
 
-                // Renderer
+                // Renderer with enhanced settings for lightbox effect
                 this.renderer = new THREE.WebGLRenderer({ 
                     antialias: true,
-                    alpha: true
+                    alpha: true,
+                    preserveDrawingBuffer: true
                 });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
                 this.renderer.shadowMap.enabled = true;
                 this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.setClearColor(0x000000, 0); // Transparent background
                 document.getElementById('threejs-container').appendChild(this.renderer.domElement);
 
-                // Lighting
-                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-                this.scene.add(ambientLight);
+                // Enhanced lighting system for lightbox effect
+                this.setupLightboxLighting();
 
-                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-                directionalLight.position.set(100, 100, 100);
-                directionalLight.castShadow = true;
-                this.scene.add(directionalLight);
+                // Add background elements for depth
+                this.createBackgroundElements();
 
                 // Add groups to scene
                 this.scene.add(this.sunburstGroup);
@@ -618,6 +724,122 @@
                 this.setupOrbitControls();
             }
 
+            setupLightboxLighting() {
+                // Remove existing lights
+                const lightsToRemove = [];
+                this.scene.children.forEach(child => {
+                    if (child.isLight) {
+                        lightsToRemove.push(child);
+                    }
+                });
+                lightsToRemove.forEach(light => this.scene.remove(light));
+
+                // Create lightbox lighting setup
+                
+                // 1. Subtle ambient light for base illumination
+                const ambientLight = new THREE.AmbientLight(0x1a1a2e, 0.3);
+                this.scene.add(ambientLight);
+
+                // 2. Main directional light (like a spotlight)
+                const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                mainLight.position.set(50, 100, 50);
+                mainLight.castShadow = true;
+                mainLight.shadow.mapSize.width = 2048;
+                mainLight.shadow.mapSize.height = 2048;
+                mainLight.shadow.camera.near = 0.5;
+                mainLight.shadow.camera.far = 500;
+                mainLight.shadow.camera.left = -100;
+                mainLight.shadow.camera.right = 100;
+                mainLight.shadow.camera.top = 100;
+                mainLight.shadow.camera.bottom = -100;
+                this.scene.add(mainLight);
+
+                // 3. Fill light from opposite direction
+                const fillLight = new THREE.DirectionalLight(0x4a90e2, 0.4);
+                fillLight.position.set(-30, 50, -30);
+                this.scene.add(fillLight);
+
+                // 4. Rim light for edge definition
+                const rimLight = new THREE.DirectionalLight(0xff6b6b, 0.3);
+                rimLight.position.set(0, -50, 100);
+                this.scene.add(rimLight);
+
+                // 5. Point lights for dramatic effect
+                const pointLight1 = new THREE.PointLight(0x4CAF50, 0.6, 200);
+                pointLight1.position.set(-20, 30, 50);
+                this.scene.add(pointLight1);
+
+                const pointLight2 = new THREE.PointLight(0x3B82F6, 0.4, 150);
+                pointLight2.position.set(30, 20, -30);
+                this.scene.add(pointLight2);
+
+                // 6. Subtle hemisphere light for environmental lighting
+                const hemisphereLight = new THREE.HemisphereLight(0x4a90e2, 0x1a1a2e, 0.2);
+                this.scene.add(hemisphereLight);
+            }
+
+            createBackgroundElements() {
+                // Create a large ground plane for shadows and depth
+                const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+                const groundMaterial = new THREE.MeshLambertMaterial({
+                    color: 0x0a0e14,
+                    transparent: true,
+                    opacity: 0.1,
+                    side: THREE.DoubleSide
+                });
+                const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+                ground.rotation.x = -Math.PI / 2;
+                ground.position.y = -50;
+                ground.receiveShadow = true;
+                this.scene.add(ground);
+
+                // Create subtle grid lines for depth perception
+                const gridHelper = new THREE.GridHelper(200, 20, 0x2a2a2a, 0x1a1a1a);
+                gridHelper.position.y = -49;
+                gridHelper.material.transparent = true;
+                gridHelper.material.opacity = 0.3;
+                this.scene.add(gridHelper);
+
+                // Create distant background planes for atmospheric depth
+                this.createAtmosphericBackground();
+            }
+
+            createAtmosphericBackground() {
+                // Back wall
+                const backWallGeometry = new THREE.PlaneGeometry(800, 400);
+                const backWallMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x0a0e14,
+                    transparent: true,
+                    opacity: 0.05,
+                    side: THREE.DoubleSide
+                });
+                const backWall = new THREE.Mesh(backWallGeometry, backWallMaterial);
+                backWall.position.z = -200;
+                this.scene.add(backWall);
+
+                // Side walls for enclosure effect
+                const sideWallGeometry = new THREE.PlaneGeometry(400, 400);
+                const sideWallMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x0a0e14,
+                    transparent: true,
+                    opacity: 0.03,
+                    side: THREE.DoubleSide
+                });
+
+                const leftWall = new THREE.Mesh(sideWallGeometry, sideWallMaterial);
+                leftWall.position.x = -200;
+                leftWall.rotation.y = Math.PI / 2;
+                this.scene.add(leftWall);
+
+                const rightWall = new THREE.Mesh(sideWallGeometry, sideWallMaterial);
+                rightWall.position.x = 200;
+                rightWall.rotation.y = -Math.PI / 2;
+                this.scene.add(rightWall);
+
+                // Add subtle fog for atmospheric depth
+                this.scene.fog = new THREE.Fog(0x0a0e14, 100, 800);
+            }
+
             setupOrbitControls() {
                 this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
                 this.controls.enableDamping = true;
@@ -625,6 +847,20 @@
                 this.controls.enableZoom = true;
                 this.controls.autoRotate = false;
                 this.controls.autoRotateSpeed = 0.5;
+                
+                // Allow some movement for inspector view while maintaining focus
+                this.controls.enablePan = true; // Enable panning for user control
+                this.controls.minDistance = 20; // Minimum zoom distance
+                this.controls.maxDistance = 150; // Maximum zoom distance
+                this.controls.minPolarAngle = Math.PI / 6; // Allow more vertical rotation
+                this.controls.maxPolarAngle = Math.PI / 2; // Limit vertical rotation
+                
+                // Add event listener to update camera position when user manually moves camera
+                this.controls.addEventListener('change', () => {
+                    // Store user's manual camera position for reference
+                    this.userCameraPosition = this.camera.position.clone();
+                    this.lastUserMove = Date.now();
+                });
             }
 
             setupEventListeners() {
@@ -632,8 +868,8 @@
                 window.addEventListener('resize', () => this.onWindowResize());
 
                 // Mouse interaction
-                this.renderer.domElement.addEventListener('mousemove', (event) => this.onMouseMove(event));
-                this.renderer.domElement.addEventListener('mouseleave', () => this.hideHoverPanel());
+                this.renderer.domElement.addEventListener('mousemove', (event) => this.handleSunburstMouseMove(event));
+                this.renderer.domElement.addEventListener('mouseleave', () => this.clearSunburstHighlight());
 
                 // Timeline controls
                 document.getElementById('timeline-slider').addEventListener('input', (e) => {
@@ -643,6 +879,7 @@
                 document.getElementById('play-btn').addEventListener('click', () => this.play());
                 document.getElementById('pause-btn').addEventListener('click', () => this.pause());
                 document.getElementById('reset-btn').addEventListener('click', () => this.reset());
+                document.getElementById('jump-to-filescan-btn').addEventListener('click', () => this.jumpToFileScan());
 
                 // Sunburst controls
                 this.setupSunburstControls();
@@ -663,6 +900,9 @@
 
                 // Command generator
                 document.getElementById('generate-cmd-btn').addEventListener('click', () => this.generateBackendCommand());
+
+                // Milestone color controls
+                this.setupMilestoneColorControls();
             }
 
             setupSunburstControls() {
@@ -681,26 +921,83 @@
                     ringThicknessValue.textContent = this.ringThickness;
                     this.updateVisualization();
                 });
+            }
 
-                const zSpacingSlider = document.getElementById('z-spacing-slider');
-                const zSpacingValue = document.getElementById('z-spacing-value');
-                zSpacingSlider.addEventListener('input', (e) => {
-                    this.zSpacing = parseInt(e.target.value);
-                    zSpacingValue.textContent = this.zSpacing;
-                    this.updateVisualization();
+            setupMilestoneColorControls() {
+                this.milestoneSelect = document.getElementById('milestone-select');
+                this.intendedColorPicker = document.getElementById('intended-color-picker');
+                this.actualColorPicker = document.getElementById('actual-color-picker');
+                // Populate dropdown
+                this.updateMilestoneDropdown();
+                // On milestone select, update color pickers
+                this.milestoneSelect.addEventListener('change', () => this.updateColorPickers());
+                // On color change, update milestone and re-render
+                this.intendedColorPicker.addEventListener('input', () => this.applyColorPickers());
+                this.actualColorPicker.addEventListener('input', () => this.applyColorPickers());
+            }
+
+            updateMilestoneDropdown() {
+                if (!this.data || !this.data.events) return;
+                const milestones = this.data.events.filter(e => e.event_type === 'milestone');
+                this.milestoneSelect.innerHTML = '';
+                milestones.forEach((event, idx) => {
+                    const option = document.createElement('option');
+                    option.value = idx;
+                    option.textContent = event.metadata.title || `Milestone ${idx + 1}`;
+                    this.milestoneSelect.appendChild(option);
                 });
+                this.updateColorPickers();
+            }
+
+            updateColorPickers() {
+                if (!this.data || !this.data.events) return;
+                const milestones = this.data.events.filter(e => e.event_type === 'milestone');
+                const idx = parseInt(this.milestoneSelect.value, 10) || 0;
+                const milestone = milestones[idx]?.metadata;
+                // Set pickers to current colors or default
+                this.intendedColorPicker.value = milestone?.intended_color ? this.toHexColor(milestone.intended_color) : '#ff00ff';
+                this.actualColorPicker.value = milestone?.actual_color ? this.toHexColor(milestone.actual_color) : '#ff00ff';
+            }
+
+            applyColorPickers() {
+                if (!this.data || !this.data.events) return;
+                const milestones = this.data.events.filter(e => e.event_type === 'milestone');
+                const idx = parseInt(this.milestoneSelect.value, 10) || 0;
+                const milestone = milestones[idx]?.metadata;
+                if (milestone) {
+                    milestone.intended_color = this.intendedColorPicker.value;
+                    milestone.actual_color = this.actualColorPicker.value;
+                    this.updateVisualization();
+                }
+            }
+
+            toHexColor(val) {
+                if (typeof val === 'string' && val.startsWith('#')) return val;
+                if (typeof val === 'number') return '#' + val.toString(16).padStart(6, '0');
+                if (val instanceof THREE.Color) return '#' + val.getHexString();
+                return '#ff00ff';
             }
 
             async loadData() {
                 try {
+                    console.log('Loading data from:', this.currentDbFile);
                     const response = await fetch(this.currentDbFile);
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
                     this.data = await response.json();
+                    // console.log('Data loaded successfully:', {
+                    //     hasData: !!this.data,
+                    //     hasEvents: !!(this.data && this.data.events),
+                    //     eventCount: this.data && this.data.events ? this.data.events.length : 0,
+                    //     eventTypes: this.data && this.data.metadata ? this.data.metadata.event_types : {},
+                    //     fileScanCount: this.data && this.data.events ? this.data.events.filter(e => e.event_type === 'file_scan').length : 0
+                    // });
                     document.getElementById('current-db-file').textContent = this.currentDbFile;
                     this.initializeTimeline();
+                    this.updateMilestoneDropdown();
                 } catch (error) {
+                    console.error('Error loading data:', error);
                     this.showError(`Failed to load data: ${error.message}`);
                     // Only generate sample data if not user-initiated
                     if (!this.userLoadedFile) {
@@ -720,6 +1017,7 @@
                             document.getElementById('current-db-file').textContent = file.name;
                             document.getElementById('db-file-error').style.display = 'none';
                             this.initializeTimeline();
+                            this.updateMilestoneDropdown();
                         } catch (parseErr) {
                             document.getElementById('db-file-error').textContent = 'Invalid JSON file.';
                             document.getElementById('db-file-error').style.display = 'block';
@@ -759,197 +1057,14 @@
                 outputArea.style.display = 'block';
             }
 
-            generateSampleData() {
-                console.log('Generating sample data for demonstration');
-                this.data = {
-                    metadata: {
-                        total_events: 4,
-                        event_types: {
-                            'file_scan': 2,
-                            'milestone': 2
-                        },
-                        time_range: {
-                            start: Date.now() / 1000 - 86400 * 7,
-                            end: Date.now() / 1000
-                        }
-                    },
-                    events: [
-                        {
-                            event_id: 'filescan_1',
-                            timestamp: Date.now() / 1000 - 86400 * 6,
-                            event_type: 'file_scan',
-                            metadata: {
-                                root_path: '/project',
-                                file_count: 5,
-                                total_size: 15000,
-                                tree_structure: {
-                                    name: 'project',
-                                    type: 'folder',
-                                    size: 15000,
-                                    file_count: 5,
-                                    children: [
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'index.html',
-                                                size: 2000,
-                                                mime_type: 'text/html'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'app.js',
-                                                size: 8000,
-                                                mime_type: 'text/javascript'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'style.css',
-                                                size: 3000,
-                                                mime_type: 'text/css'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'README.md',
-                                                size: 1500,
-                                                mime_type: 'text/markdown'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'package.json',
-                                                size: 500,
-                                                mime_type: 'application/json'
-                                            }
-                                        }
-                                    ]
-                                }
-                            }
-                        },
-                        {
-                            event_id: 'milestone_1',
-                            timestamp: Date.now() / 1000 - 86400 * 5,
-                            event_type: 'milestone',
-                            metadata: {
-                                title: '📋 Project Setup Complete',
-                                description: 'Initial project structure and configuration files',
-                                category: 'deliverable',
-                                priority: 'high',
-                                participants: ['dev@example.com'],
-                                related_files: ['package.json', 'README.md'],
-                                confidence: 0.9
-                            }
-                        },
-                        {
-                            event_id: 'milestone_2',
-                            timestamp: Date.now() / 1000 - 86400 * 3,
-                            event_type: 'milestone',
-                            metadata: {
-                                title: '⏰ Feature Implementation Deadline',
-                                description: 'Complete main application features by this date',
-                                category: 'deadline',
-                                priority: 'critical',
-                                participants: ['pm@example.com', 'dev@example.com'],
-                                related_files: ['app.js', 'style.css'],
-                                confidence: 0.95
-                            }
-                        },
-                        {
-                            event_id: 'filescan_2',
-                            timestamp: Date.now() / 1000 - 86400 * 1,
-                            event_type: 'file_scan',
-                            metadata: {
-                                root_path: '/project',
-                                file_count: 8,
-                                total_size: 25000,
-                                tree_structure: {
-                                    name: 'project',
-                                    type: 'folder',
-                                    size: 25000,
-                                    file_count: 8,
-                                    children: [
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'index.html',
-                                                size: 3000,
-                                                mime_type: 'text/html'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'app.js',
-                                                size: 12000,
-                                                mime_type: 'text/javascript'
-                                            }
-                                        },
-                                        {
-                                            type: 'file',
-                                            data: {
-                                                name: 'style.css',
-                                                size: 5000,
-                                                mime_type: 'text/css'
-                                            }
-                                        },
-                                        {
-                                            type: 'folder',
-                                            data: {
-                                                name: 'components',
-                                                size: 5000,
-                                                file_count: 3,
-                                                children: [
-                                                    {
-                                                        type: 'file',
-                                                        data: {
-                                                            name: 'header.js',
-                                                            size: 2000,
-                                                            mime_type: 'text/javascript'
-                                                        }
-                                                    },
-                                                    {
-                                                        type: 'file',
-                                                        data: {
-                                                            name: 'footer.js',
-                                                            size: 1500,
-                                                            mime_type: 'text/javascript'
-                                                        }
-                                                    },
-                                                    {
-                                                        type: 'file',
-                                                        data: {
-                                                            name: 'sidebar.js',
-                                                            size: 1500,
-                                                            mime_type: 'text/javascript'
-                                                        }
-                                                    }
-                                                ]
-                                            }
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    ],
-                    correlations: [
-                        {
-                            file_event_id: 'filescan_2',
-                            milestone_event_id: 'milestone_2',
-                            correlation_strength: 0.8,
-                            correlation_type: 'temporal_file_mention'
-                        }
-                    ]
-                };
-                this.initializeTimeline();
-            }
 
             initializeTimeline() {
+                // console.log('Initializing timeline with data:', {
+                //     hasData: !!this.data,
+                //     hasEvents: !!(this.data && this.data.events),
+                //     eventCount: this.data && this.data.events ? this.data.events.length : 0
+                // });
+                
                 if (!this.data || !this.data.events || this.data.events.length === 0) {
                     this.showError('No timeline data available');
                     return;
@@ -957,14 +1072,17 @@
 
                 const slider = document.getElementById('timeline-slider');
                 slider.max = this.data.events.length - 1;
-                slider.value = 0;
                 
-                this.currentEventIndex = 0;
+                // Start at the end to show all events including file_scan events
+                this.currentEventIndex = this.data.events.length - 1;
+                slider.value = this.currentEventIndex;
+                
+                console.log('Timeline initialized, calling updateVisualization');
                 this.updateVisualization();
                 this.updateInfo();
                 this.updateGanttChart();
                 this.updateLegend();
-                this.resetCamera();
+                this.updateCameraPosition();
             }
 
             createVisualization() {
@@ -975,10 +1093,21 @@
                 // Clear existing visualization
                 this.clearGroups();
 
-                if (!this.data || !this.data.events) return;
+                if (!this.data || !this.data.events) {
+                    console.log('No data or events available');
+                    return;
+                }
 
                 // Show events up to current index
                 const eventsToShow = this.data.events.slice(0, this.currentEventIndex + 1);
+                // console.log('updateVisualization called:', {
+                //     totalEvents: this.data.events.length,
+                //     currentEventIndex: this.currentEventIndex,
+                //     eventsToShow: eventsToShow.length,
+                //     showSunburst: this.showSunburst,
+                //     showGantt: this.showGantt,
+                //     showConnections: this.showConnections
+                // });
                 
                 if (this.showSunburst) {
                     this.createSunburstVisualization(eventsToShow);
@@ -1006,201 +1135,318 @@
             }
 
             createSunburstVisualization(events) {
+                console.log('Creating sunburst visualization for events:', events.length);
+                const fileScanEvents = events.filter(e => e.event_type === 'file_scan');
+                console.log('File scan events found:', fileScanEvents.length);
+                
+                // In createSunburstVisualization, compute minTime, maxTime, minY, maxY as in Gantt
+                const scanTimes = fileScanEvents.map(e => e.timestamp);
+                const minTime = Math.min(...scanTimes);
+                const maxTime = Math.max(...scanTimes);
+                const minY = 0, maxY = 100;
+                
                 events.forEach((event, index) => {
-                    if (event.event_type === 'file_scan' && event.metadata.tree_structure) {
-                        const zPosition = -index * this.zSpacing;
-                        this.createSunburstAtPosition(event.metadata.tree_structure, zPosition, index);
-                        this.createTimeLabel(event.timestamp, zPosition, 'file_scan');
+                    console.log(`Processing event ${index}:`, {
+                        eventType: event.event_type,
+                        hasTreeStructure: !!(event.metadata && event.metadata.tree_structure),
+                        treeStructureKeys: event.metadata && event.metadata.tree_structure ? Object.keys(event.metadata.tree_structure) : []
+                    });
+                    
+                    if (event.event_type === 'file_scan' && event.metadata && event.metadata.tree_structure) {
+                        // Position all events at the same Z position (centered) - timeline scrolls by
+                        const zPosition = 0; // Fixed center position
+                        console.log(`Creating sunburst for file_scan event at index ${index}, zPosition ${zPosition}`);
+                        this.createSunburstAtPosition(event.metadata.tree_structure, zPosition, index, this.timestampToY(event.timestamp, minTime, maxTime, minY, maxY));
+                        this.createTextLabel(new Date(event.timestamp * 1000).toLocaleDateString(), zPosition, 'file_scan');
                     }
                 });
             }
 
-            createSunburstAtPosition(treeData, zPosition, eventIndex) {
-                console.log('Creating sunburst at position:', {
-                    zPosition: zPosition,
-                    eventIndex: eventIndex
-                });
-                
-                this.createSunburstRecursive(
-                    treeData, 
-                    0, 
-                    Math.PI * 2, 
-                    5, 
-                    0, 
-                    new THREE.Vector3(0, 0, zPosition), 
-                    eventIndex
-                );
+            createSunburstAtPosition(treeData, zPosition, eventIndex, yPosition) {
+                const group = this.createSunburst(treeData, eventIndex, 0); // zOffset = 0
+                group.position.y = yPosition;
+                group.rotation.x = Math.PI * 1.5; // radians notation, 270 degrees 
+                this.sunburstGroup.add(group);
             }
 
-            createSunburstRecursive(node, startAngle, endAngle, innerRadius, outerRadius, position, eventIndex) {
-                const angleSpan = endAngle - startAngle;
-                const radius = outerRadius || innerRadius + this.ringThickness;
-                const opacity = Math.max(0.3, 1 - eventIndex * 0.1);
-                    
-                // Create ring segment
-                const geometry = new THREE.RingGeometry(
-                    innerRadius, 
-                    radius, 
-                    32, 
-                    1, 
-                    startAngle, 
-                    angleSpan
-                );
-                // Debug statement for sunburst creation
-                console.log('Creating sunburst segment:', {
-                    nodeType: node.type,
-                    nodeName: node.name || (node.data && node.data.name),
-                    startAngle: startAngle.toFixed(3),
-                    endAngle: endAngle.toFixed(3), 
-                    angleSpan: angleSpan.toFixed(3),
-                    innerRadius: innerRadius.toFixed(1),
-                    outerRadius: radius.toFixed(1),
-                    position: {
-                        x: position.x.toFixed(1),
-                        y: position.y.toFixed(1), 
-                        z: position.z.toFixed(1)
-                    },
-                    eventIndex: eventIndex,
-                    opacity: opacity.toFixed(2)
-                });
-                // Get color based on type and mime_type
-                let color;
-                if (node.type === 'folder') {
-                    color = this.fileColors.folder;
-                } else {
-                    const mimeType = node.mime_type || (node.data && node.data.mime_type);
-                    color = this.fileColors[mimeType] || this.fileColors.default;
-                }
+            // Advanced sunburst logic
+            createSunburst(treeData, eventIndex, zOffset) {
+                const group = new THREE.Group();
+                const minAngleDeg = this.minAngleDeg || 2;
+                const minAngleRad = minAngleDeg * Math.PI / 180;
+                const ringThickness = this.ringThickness;
+                const ringGap = 2;
 
-                const material = new THREE.MeshLambertMaterial({
-                    color: color,
-                    transparent: true,
-                    opacity: opacity,
-                    side: THREE.DoubleSide
-                });
+                // Color cache for this sunburst
+                this.colorCache = this.colorCache || new Map();
+                this.segmentMeshes = new Map();
+                this.connectionLinesByChild = new Map();
+                this.connectionLines = [];
 
-                const ring = new THREE.Mesh(geometry, material);
-                ring.position.copy(position);
-                ring.userData = { 
-                    node: node, 
-                    type: 'sunburst', 
-                    eventIndex: eventIndex,
-                    originalOpacity: opacity
+                // Helper to get the center point of a segment at a given radius and angle
+                const getSegmentCenter = (innerRadius, outerRadius, startAngle, endAngle, z) => {
+                    const angle = (startAngle + endAngle) / 2;
+                    const radius = (innerRadius + outerRadius) / 2;
+                    return new THREE.Vector3(
+                        Math.cos(angle) * radius,
+                        Math.sin(angle) * radius,
+                        z
+                    );
                 };
-                
-                this.sunburstGroup.add(ring);
 
-                // Process children
-                const children = node.children || (node.data && node.data.children);
-                if (children && children.length > 0) {
-                    const totalValue = children.reduce((sum, child) => {
-                        const childData = child.data || child;
-                        return sum + (childData.size || 1);
-                    }, 0);
-                    
-                    let currentAngle = startAngle;
-                    const minAngleRad = this.minAngleDeg * Math.PI / 180;
-
-                    children.forEach(child => {
-                        const childData = child.data || child;
-                        const childSize = childData.size || 1;
-                        const childAngleSpan = Math.max(minAngleRad, (childSize / totalValue) * angleSpan);
-                        
-                        this.createSunburstRecursive(
-                            childData,
-                            currentAngle,
-                            currentAngle + childAngleSpan,
-                            radius + 2,
-                            radius + 2 + this.ringThickness,
-                            position,
-                            eventIndex
-                        );
-                        
-                        currentAngle += childAngleSpan;
+                const createRingSegment = (node, innerRadius, outerRadius, startAngle, endAngle, depth, colorOverride = null) => {
+                    const segments = 64;
+                    const geometry = new THREE.RingGeometry(
+                        innerRadius,
+                        outerRadius,
+                        segments,
+                        1,
+                        startAngle,
+                        endAngle - startAngle
+                    );
+                    let baseColor = colorOverride || this.getColorForNode(node);
+                    if (typeof baseColor === 'string' && !baseColor.startsWith('#')) {
+                        baseColor = `#${baseColor}`;
+                    }
+                    const color = new THREE.Color(baseColor);
+                    const material = new THREE.MeshLambertMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.8,
+                        side: THREE.DoubleSide
                     });
-                }
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.z = depth * 2; // Separate each ring in Z within a sunburst
+                    mesh.receiveShadow = true;
+                    mesh.castShadow = true;
+                    mesh.userData = { 
+                        node, 
+                        eventIndex, 
+                        depth, 
+                        innerRadius, 
+                        outerRadius, 
+                        startAngle, 
+                        endAngle,
+                        baseColor: baseColor,
+                        originalColor: baseColor
+                    };
+                    return mesh;
+                };
+
+                let segmentCount = 0;
+                const buildSunburst = (node, innerRadius, outerRadius, startAngle, endAngle, depth = 0, siblingIndex = 0, siblingCount = 1, parentInfo = null, parentNode = null) => {
+                    // Debug log for node properties
+                    console.log(`[SUNBURST-DEBUG] buildSunburst: name=${node.name}, type=${node.type}, size=${node.size}, value=${node.value}, children=${node.children ? node.children.length : 0}, depth=${depth}`);
+                    node.parent = parentNode;
+                    // [SUNBURST-DEBUG] Log node info and recursion
+                    const children = node.children || [];
+                    console.log(`[SUNBURST-DEBUG] buildSunburst: name='${node.name}', type='${node.type}', children=${children.length}, depth=${depth}, innerRadius=${innerRadius}, outerRadius=${outerRadius}, startAngle=${startAngle}, endAngle=${endAngle}`);
+                    let baseColor = this.getColorForNode ? this.getColorForNode(node) : '#9e9e9e';
+                    if (node.type === 'file' && siblingCount > 1) {
+                        const hsl = {};
+                        new THREE.Color(baseColor).getHSL(hsl);
+                        hsl.l = 0.45 + 0.2 * (siblingIndex / (siblingCount - 1));
+                        const color = new THREE.Color();
+                        color.setHSL(hsl.h, hsl.s, hsl.l);
+                        baseColor = `#${color.getHexString()}`;
+                    }
+                    const mesh = createRingSegment(node, innerRadius, outerRadius, startAngle, endAngle, depth, baseColor);
+                    group.add(mesh);
+                    segmentCount++;
+                    this.segmentMeshes.set(node, mesh);
+                    // Draw connection line if parentInfo is provided
+                    if (parentInfo) {
+                        const parentCenter = getSegmentCenter(
+                            parentInfo.innerRadius, parentInfo.outerRadius, parentInfo.startAngle, parentInfo.endAngle, (depth - 1) * 2 + zOffset
+                        );
+                        const childCenter = getSegmentCenter(
+                            innerRadius, outerRadius, startAngle, endAngle, depth * 2 + zOffset
+                        );
+                        const midRadius = (parentInfo.outerRadius + innerRadius) / 2 + ringGap * 0.5;
+                        const midAngle = (parentInfo.endAngle + startAngle) / 2;
+                        const controlPoint = new THREE.Vector3(
+                            Math.cos(midAngle) * midRadius,
+                            Math.sin(midAngle) * midRadius,
+                            (parentCenter.z + childCenter.z) / 2
+                        );
+                        const curve = new THREE.QuadraticBezierCurve3(parentCenter, controlPoint, childCenter);
+                        const points = curve.getPoints(32);
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.3, transparent: true }));
+                        group.add(line);
+                        line.userData = {
+                            type: 'connection',
+                            parentNode: parentInfo.node,
+                            childNode: node
+                        };
+                        this.connectionLines.push(line);
+                        this.connectionLinesByChild.set(node, line);
+                    }
+                    // Process children
+                    if (children.length > 0) {
+                        const n = children.length;
+                        const totalSize = children.reduce((sum, child) => sum + (child.size || 1), 0);
+                        const totalMinAngle = n * minAngleRad;
+                        const availableAngle = Math.max(0, (endAngle - startAngle) - totalMinAngle);
+                        let currentAngle = startAngle;
+                        children.forEach((child, i) => {
+                            const childSize = child.size || 1;
+                            const angleSpan = minAngleRad + (availableAngle * (childSize / totalSize));
+                            const childEndAngle = currentAngle + angleSpan;
+                            buildSunburst(
+                                child,
+                                outerRadius + ringGap,
+                                outerRadius + ringGap + ringThickness,
+                                currentAngle,
+                                childEndAngle,
+                                depth + 1,
+                                i,
+                                n,
+                                { innerRadius, outerRadius, startAngle, endAngle, node },
+                                node
+                            );
+                            currentAngle = childEndAngle;
+                        });
+                    }
+                };
+                // Start at radius 5 for unified visualizer
+                buildSunburst(treeData, 2, 2 + ringThickness, 0, Math.PI * 2);
+                console.log(`[SUNBURST-DEBUG] Total segments created and added: ${segmentCount}`);
+                return group;
+            }
+
+            // Map timestamp to Y position (linear between min/max)
+            timestampToY(timestamp, minTime, maxTime, minY, maxY) {
+                if (maxTime === minTime) return minY;
+                const t = (timestamp - minTime) / (maxTime - minTime);
+                return minY + t * (maxY - minY);
             }
 
             createGanttVisualization(events) {
                 const milestoneEvents = events.filter(e => e.event_type === 'milestone');
-                const ganttX = 80; // Position to the right of sunburst
-                
+                if (milestoneEvents.length === 0) return;
+                // Timeline axis parameters
+                const axisX = 0, axisZ = 0;
+                const axisColor = 0xff00ff; // bright purple
+                const axisWidth = 0.3;
+                const minY = 0, maxY = 100; // Y range for timeline
+                // Get min/max times
+                const times = milestoneEvents.map(e => e.metadata.start_time || e.timestamp);
+                const endTimes = milestoneEvents.map(e => (e.metadata.end_time || (e.metadata.start_time || e.timestamp) + (e.metadata.duration || 86400)));
+                const minTime = Math.min(...times);
+                const maxTime = Math.max(...endTimes);
+                // Log Y location for each file scan event
+                events.forEach((event, idx) => {
+                    if (event.event_type === 'file_scan') {
+                        const y = this.timestampToY(event.timestamp, minTime, maxTime, minY, maxY);
+                        console.log(`[DEBUG] File scan event at timestamp ${event.timestamp} mapped to Y=${y}`);
+                    }
+                });
+                // Draw vertical axis
+                const axisGeom = new THREE.CylinderGeometry(axisWidth, axisWidth, maxY - minY + 10, 32);
+                const axisMat = new THREE.MeshBasicMaterial({ color: axisColor });
+                const axisMesh = new THREE.Mesh(axisGeom, axisMat);
+                axisMesh.position.set(axisX, (minY + maxY) / 2, axisZ);
+                this.ganttGroup.add(axisMesh);
+                // Draw dashed horizontal reference line at first milestone Y
+                const firstY = this.timestampToY(times[0], minTime, maxTime, minY, maxY);
+                const dashMat = new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 2, gapSize: 2 });
+                const dashGeom = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(-20, firstY, axisZ),
+                    new THREE.Vector3(20, firstY, axisZ)
+                ]);
+                const dashLine = new THREE.Line(dashGeom, dashMat);
+                dashLine.computeLineDistances();
+                this.ganttGroup.add(dashLine);
+                // For each milestone, draw tick, bar, and label
                 milestoneEvents.forEach((event, index) => {
                     const milestone = event.metadata;
-                    const zPosition = -events.indexOf(event) * this.zSpacing;
-                    const yPosition = index * 15; // Stack vertically
-                    
-                    this.createMilestoneBar3D(milestone, ganttX, yPosition, zPosition, event.event_id);
+                    const startTime = milestone.start_time || event.timestamp;
+                    const duration = milestone.duration || (milestone.end_time ? (milestone.end_time - startTime) : 86400);
+                    const endTime = milestone.end_time || (startTime + duration);
+                    const intendedEnd = milestone.intended_end_time || endTime;
+                    const actualEnd = milestone.actual_end_time || endTime;
+                    const intendedDuration = intendedEnd - startTime;
+                    const actualDuration = actualEnd - startTime;
+                    const startY = this.timestampToY(startTime, minTime, maxTime, minY, maxY);
+                    const intendedBarHeight = this.timestampToY(intendedEnd, minTime, maxTime, minY, maxY) - startY;
+                    const actualBarHeight = this.timestampToY(actualEnd, minTime, maxTime, minY, maxY) - startY;
+                    // Colors: allow manual override
+                    let intendedColor = milestone.intended_color || 0xff00ff;
+                    let actualColor = milestone.actual_color || 0xff00ff;
+                    // Accept CSS color strings
+                    if (typeof intendedColor === 'string') intendedColor = new THREE.Color(intendedColor);
+                    if (typeof actualColor === 'string') actualColor = new THREE.Color(actualColor);
+                    // Draw tick/marker at startY
+                    const tickGeom = new THREE.CylinderGeometry(0.5, 0.5, 2, 16);
+                    const tickMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+                    const tick = new THREE.Mesh(tickGeom, tickMat);
+                    tick.position.set(axisX, startY, axisZ);
+                    this.ganttGroup.add(tick);
+                    // Draw horizontal dashed line from axis to bar
+                    const barOffsetX = 10;
+                    const dashGeom = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(axisX, startY, axisZ),
+                        new THREE.Vector3(axisX + barOffsetX, startY, axisZ)
+                    ]);
+                    const dashLine = new THREE.Line(dashGeom, dashMat);
+                    dashLine.computeLineDistances();
+                    this.ganttGroup.add(dashLine);
+                    // Draw intended duration outline bar (vertical, at end of dashed line)
+                    const intendedBarGeom = new THREE.BoxGeometry(2, Math.abs(intendedBarHeight), 2);
+                    const intendedBarEdges = new THREE.EdgesGeometry(intendedBarGeom);
+                    const intendedBarLine = new THREE.LineSegments(
+                        intendedBarEdges,
+                        new THREE.LineBasicMaterial({ color: intendedColor, linewidth: 2 })
+                    );
+                    intendedBarLine.position.set(axisX + barOffsetX, startY + intendedBarHeight / 2, axisZ);
+                    this.ganttGroup.add(intendedBarLine);
+                    // Draw actual duration solid bar (vertical, inside outline)
+                    const actualBarGeom = new THREE.BoxGeometry(1.2, Math.abs(actualBarHeight), 1.2);
+                    const actualBarMat = new THREE.MeshLambertMaterial({ color: actualColor });
+                    const actualBar = new THREE.Mesh(actualBarGeom, actualBarMat);
+                    actualBar.position.set(axisX + barOffsetX, startY + actualBarHeight / 2, axisZ);
+                    this.ganttGroup.add(actualBar);
+                    // Optionally, draw dashed line at intended endY
+                    const endDashGeom = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(axisX, startY + intendedBarHeight, axisZ),
+                        new THREE.Vector3(axisX + barOffsetX, startY + intendedBarHeight, axisZ)
+                    ]);
+                    const endDashLine = new THREE.Line(endDashGeom, dashMat);
+                    endDashLine.computeLineDistances();
+                    this.ganttGroup.add(endDashLine);
+                    // Label at top of intended bar
+                    this.createTextLabel(milestone.title, axisX + barOffsetX + 4, startY + intendedBarHeight + 2, axisZ);
                 });
-            }
-
-            createMilestoneBar3D(milestone, x, y, z, eventId) {
-                const color = this.milestoneColors[milestone.category] || this.milestoneColors.default;
-                
-                // Create milestone bar
-                const geometry = new THREE.BoxGeometry(12, 4, 8);
-                const material = new THREE.MeshLambertMaterial({
-                    color: color,
-                    transparent: true,
-                    opacity: 0.8
-                });
-
-                const bar = new THREE.Mesh(geometry, material);
-                bar.position.set(x, y, z);
-                bar.userData = { 
-                    milestone: milestone, 
-                    type: 'milestone',
-                    eventId: eventId
-                };
-                bar.castShadow = true;
-
-                this.ganttGroup.add(bar);
-
-                // Add milestone marker
-                const markerGeometry = new THREE.SphereGeometry(2);
-                const markerMaterial = new THREE.MeshBasicMaterial({
-                    color: milestone.priority === 'critical' ? 0xFF0000 : color,
-                    transparent: true,
-                    opacity: 0.9
-                });
-                
-                const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-                marker.position.set(x - 8, y, z);
-                marker.userData = { 
-                    milestone: milestone, 
-                    type: 'milestone_marker',
-                    eventId: eventId
-                };
-                
-                this.ganttGroup.add(marker);
-
-                // Add text label
-                this.createTextLabel(milestone.title, x + 8, y + 6, z);
             }
 
             createTextLabel(text, x, y, z) {
+                // Ensure text is a string
+                if (typeof text !== 'string') {
+                    if (typeof text === 'number') {
+                        // Assume timestamp, format as date string
+                        text = new Date(text * 1000).toLocaleDateString();
+                    } else {
+                        text = String(text);
+                    }
+                }
                 const canvas = document.createElement('canvas');
                 canvas.width = 256;
                 canvas.height = 64;
                 const context = canvas.getContext('2d');
-                
+                context.font = 'bold 12px Arial';
                 context.fillStyle = '#ffffff';
-                context.font = 'bold 14px Arial';
                 context.fillText(text.substring(0, 20), 10, 30);
-                
                 const texture = new THREE.CanvasTexture(canvas);
                 const material = new THREE.MeshBasicMaterial({
                     map: texture,
                     transparent: true,
                     alphaTest: 0.1
                 });
-                
-                const geometry = new THREE.PlaneGeometry(16, 4);
+                const geometry = new THREE.PlaneGeometry(12, 3);
                 const textMesh = new THREE.Mesh(geometry, material);
-                
                 textMesh.position.set(x, y, z);
                 textMesh.lookAt(this.camera.position);
-                
                 this.ganttGroup.add(textMesh);
             }
 
@@ -1227,7 +1473,8 @@
                 const geometry = new THREE.PlaneGeometry(8, 2);
                 const label = new THREE.Mesh(geometry, material);
                 
-                label.position.set(-60, 0, z);
+                // Position label to align with sunburst
+                label.position.set(-15, 0, z); // Moved to align with sunburst at X=0
                 label.lookAt(this.camera.position);
                 
                 this.sunburstGroup.add(label);
@@ -1241,12 +1488,12 @@
                     const milestoneEvent = events.find(e => e.event_id === correlation.milestone_event_id);
                     
                     if (fileEvent && milestoneEvent) {
-                        const fileZ = -events.indexOf(fileEvent) * this.zSpacing;
-                        const milestoneZ = -events.indexOf(milestoneEvent) * this.zSpacing;
+                        // All events are at the same Z position now
+                        const zPosition = 0; // Fixed center position
                         
                         this.createConnectionLine(
-                            new THREE.Vector3(40, 0, fileZ),
-                            new THREE.Vector3(80, 0, milestoneZ),
+                            new THREE.Vector3(0, 0, zPosition), // Sunburst position
+                            new THREE.Vector3(5, 0, zPosition), // Milestone position
                             correlation.correlation_strength
                         );
                     }
@@ -1334,31 +1581,40 @@
 
             updateLegend() {
                 const legendContent = document.getElementById('legend-content');
+                if (!legendContent) return;
                 const categories = {
-                    'Programming': ['text/javascript', 'text/x-python', 'text/html', 'text/css'],
-                    'Documents': ['application/json', 'text/markdown', 'application/pdf'],
-                    'Other': ['folder', 'default']
+                    'Programming': ['text/javascript', 'text/x-python', 'text/html', 'text/css', 'application/json', 'text/markdown'],
+                    'Documents': ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-outlook'],
+                    'Media': ['image/', 'video/', 'audio/'],
+                    'Other': ['text/', 'folder', 'default']
                 };
 
                 let html = '';
                 for (const [category, types] of Object.entries(categories)) {
                     html += `<div class="legend-category">${category}</div>`;
                     types.forEach(type => {
-                        const color = this.fileColors[type];
-                        const label = type.split('/').pop()
-                            .replace('javascript', 'JavaScript')
+                        const color = this.colorMap[type];
+                        let label = type.split('/').pop().replace('application/vnd.', '').replace('openxmlformats-officedocument.', '')
+                            .replace('wordprocessingml.document', 'Word')
+                            .replace('spreadsheetml.sheet', 'Excel')
+                            .replace('ms-outlook', 'Outlook')
                             .replace('x-python', 'Python')
+                            .replace('javascript', 'JavaScript')
                             .replace('html', 'HTML')
                             .replace('css', 'CSS')
                             .replace('json', 'JSON')
                             .replace('markdown', 'Markdown')
                             .replace('pdf', 'PDF')
+                            .replace('image', 'Images')
+                            .replace('video', 'Video')
+                            .replace('audio', 'Audio')
+                            .replace('text', 'Text Files')
                             .replace('folder', 'Folders')
-                            .replace('default', 'Other');
-                        
+                            .replace('default', 'Other Files');
                         html += `
                             <div class="legend-item">
-                                <div class="color-box" style="background-color: #${color.toString(16).padStart(6, '0')};"></div>
+                                <div class="color-box" style="background-color: ${color};"></div>
                                 <span>${label}</span>
                             </div>
                         `;
@@ -1367,131 +1623,163 @@
                 legendContent.innerHTML = html;
             }
 
-            onMouseMove(event) {
+            handleSunburstMouseMove(event) {
                 const rect = this.renderer.domElement.getBoundingClientRect();
                 this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
                 this.raycaster.setFromCamera(this.mouse, this.camera);
-                
                 const allObjects = [
                     ...this.sunburstGroup.children,
-                    ...this.ganttGroup.children,
-                    ...this.connectionGroup.children
+                    ...(this.connectionLines || [])
                 ];
-                
-                const intersects = this.raycaster.intersectObjects(allObjects);
+                const intersects = this.raycaster.intersectObjects(allObjects, true);
 
-                // Reset opacity for all objects
-                allObjects.forEach(obj => {
-                    if (obj.material && obj.userData.originalOpacity !== undefined) {
-                        obj.material.opacity = obj.userData.originalOpacity;
+                // Revert all previously highlighted objects
+                if (!this.highlightedObjects) this.highlightedObjects = new Set();
+                this.highlightedObjects.forEach(obj => {
+                    // Revert segments
+                    if (obj.isMesh) {
+                        let originalColor = obj.userData && obj.userData.originalColor;
+                        if (typeof originalColor === 'string' && !originalColor.startsWith('#')) {
+                            originalColor = `#${originalColor}`;
+                        }
+                        if (originalColor) {
+                            obj.material.color.set(originalColor);
+                        }
+                        obj.material.opacity = 0.8;
+                    }
+                    // Revert lines
+                    if (obj.isLine) {
+                        obj.material.color.set(0xffffff);
+                        obj.material.opacity = 0.3;
                     }
                 });
+                this.highlightedObjects.clear();
 
                 if (intersects.length > 0) {
                     const intersected = intersects[0].object;
-                    
-                    // Highlight hovered object
-                    if (intersected.material) {
-                        intersected.material.opacity = 1.0;
+                    // Highlight path if hovering a segment
+                    if (intersected.userData && intersected.userData.node) {
+                        let node = intersected.userData.node;
+                        while (node) {
+                            // Highlight segment
+                            const mesh = this.segmentMeshes && this.segmentMeshes.get(node);
+                            if (mesh) {
+                                // Store current color if not already stored
+                                if (!mesh.userData.originalColor) {
+                                    let currentColor = mesh.material.color.getHexString();
+                                    if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                        currentColor = `#${currentColor}`;
+                                    }
+                                    mesh.userData.originalColor = currentColor;
+                                }
+                                mesh.material.color.set('#00ff66');
+                                mesh.material.opacity = 1.0;
+                                this.highlightedObjects.add(mesh);
+                            }
+                            // Highlight connection line from parent to node
+                            const line = this.connectionLinesByChild && this.connectionLinesByChild.get(node);
+                            if (line) {
+                                line.material.color.set('#00ff66');
+                                line.material.opacity = 1.0;
+                                this.highlightedObjects.add(line);
+                            }
+                            node = node.parent;
+                        }
+                        this.showSunburstDetailsPanel(intersected.userData.node, event.clientX, event.clientY);
+                        this.hoveredObject = intersected;
+                    } else if (intersected.userData && intersected.userData.type === 'connection') {
+                        // If hovering a connection line, highlight it and its child/parent segments
+                        const line = intersected;
+                        line.material.color.set('#00ff66');
+                        line.material.opacity = 1.0;
+                        this.highlightedObjects.add(line);
+                        // Highlight child and parent segments
+                        const childMesh = this.segmentMeshes && this.segmentMeshes.get(line.userData.childNode);
+                        if (childMesh) {
+                            if (!childMesh.userData.originalColor) {
+                                let currentColor = childMesh.material.color.getHexString();
+                                if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                    currentColor = `#${currentColor}`;
+                                }
+                                childMesh.userData.originalColor = currentColor;
+                            }
+                            childMesh.material.color.set('#00ff66');
+                            childMesh.material.opacity = 1.0;
+                            this.highlightedObjects.add(childMesh);
+                        }
+                        const parentMesh = this.segmentMeshes && this.segmentMeshes.get(line.userData.parentNode);
+                        if (parentMesh) {
+                            if (!parentMesh.userData.originalColor) {
+                                let currentColor = parentMesh.material.color.getHexString();
+                                if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                    currentColor = `#${currentColor}`;
+                                }
+                                parentMesh.userData.originalColor = currentColor;
+                            }
+                            parentMesh.material.color.set('#00ff66');
+                            parentMesh.material.opacity = 1.0;
+                            this.highlightedObjects.add(parentMesh);
+                        }
+                        this.showSunburstDetailsPanel(null);
                     }
-                    
-                    this.showHoverPanel(intersected, event.clientX, event.clientY);
-                    this.hoveredObject = intersected;
                 } else {
-                    this.hideHoverPanel();
+                    this.showSunburstDetailsPanel(null);
                     this.hoveredObject = null;
                 }
             }
 
-            showHoverPanel(object, x, y) {
+            clearSunburstHighlight() {
+                if (!this.highlightedObjects) return;
+                this.highlightedObjects.forEach(obj => {
+                    if (obj.isMesh) {
+                        let originalColor = obj.userData && obj.userData.originalColor;
+                        if (typeof originalColor === 'string' && !originalColor.startsWith('#')) {
+                            originalColor = `#${originalColor}`;
+                        }
+                        if (originalColor) {
+                            obj.material.color.set(originalColor);
+                        }
+                        obj.material.opacity = 0.8;
+                    }
+                    if (obj.isLine) {
+                        obj.material.color.set(0xffffff);
+                        obj.material.opacity = 0.3;
+                    }
+                });
+                this.highlightedObjects.clear();
+                this.showSunburstDetailsPanel(null);
+            }
+
+            showSunburstDetailsPanel(node, x, y) {
+                // Use the hover-info panel for details
                 const panel = document.getElementById('details-panel');
                 const title = document.getElementById('details-title');
                 const content = document.getElementById('details-content');
-                
-                let titleText = 'Unknown';
-                let contentText = '';
-
-                if (object.userData.node) {
-                    const node = object.userData.node;
-                    titleText = node.name || 'File/Folder';
-                    contentText = `
-                        <div><span class="label">Type:</span> <span class="value">${node.type || 'file'}</span></div>
-                        <div><span class="label">Size:</span> <span class="value">${this.formatBytes(node.size || 0)}</span></div>
-                        ${node.mime_type ? `<div><span class="label">MIME:</span> <span class="value">${node.mime_type}</span></div>` : ''}
-                    `;
-                } else if (object.userData.milestone) {
-                    const milestone = object.userData.milestone;
-                    titleText = milestone.title || 'Milestone';
-                    contentText = `
-                        <div><span class="label">Category:</span> <span class="value">${milestone.category}</span></div>
-                        <div><span class="label">Priority:</span> <span class="value">${milestone.priority}</span></div>
-                        <div><span class="label">Confidence:</span> <span class="value">${(milestone.confidence * 100).toFixed(0)}%</span></div>
-                        <div style="margin-top: 8px;"><span class="value">${milestone.description}</span></div>
-                    `;
-                } else if (object.userData.type === 'connection') {
-                    titleText = 'Correlation';
-                    contentText = `
-                        <div><span class="label">Strength:</span> <span class="value">${(object.userData.strength * 100).toFixed(0)}%</span></div>
-                        <div><span class="value">Links file changes to milestones</span></div>
-                    `;
+                if (!node) {
+                    title.textContent = 'Hover for details';
+                    content.innerHTML = '';
+                    panel.style.opacity = '0';
+                    return;
                 }
-
-                title.textContent = titleText;
-                content.innerHTML = contentText;
-                
-                panel.style.left = `${Math.min(x + 20, window.innerWidth - 320)}px`;
-                panel.style.top = `${Math.min(y + 20, window.innerHeight - 200)}px`;
+                title.textContent = node.name || 'File/Folder';
+                let html = `<div><span class='label'>Type:</span> <span class='value'>${node.type || 'file'}</span></div>`;
+                if (node.size) {
+                    html += `<div><span class='label'>Size:</span> <span class='value'>${this.formatBytes(node.size)}</span></div>`;
+                }
+                if (node.type === 'file') {
+                    if (node.mime_type) html += `<div><span class='label'>MIME:</span> <span class='value'>${node.mime_type}</span></div>`;
+                    if (node.file_hash) html += `<div><span class='label'>Hash:</span> <span class='value'>${node.file_hash}</span></div>`;
+                } else {
+                    if (node.file_count) html += `<div><span class='label'>Files:</span> <span class='value'>${node.file_count}</span></div>`;
+                }
+                content.innerHTML = html;
+                // Position panel near mouse
+                if (typeof x === 'number' && typeof y === 'number') {
+                    panel.style.left = `${Math.min(x + 20, window.innerWidth - 320)}px`;
+                    panel.style.top = `${Math.min(y + 20, window.innerHeight - 200)}px`;
+                }
                 panel.style.opacity = '1';
-            }
-
-            hideHoverPanel() {
-                const panel = document.getElementById('details-panel');
-                panel.style.opacity = '0';
-            }
-
-            formatBytes(bytes) {
-                if (bytes === 0) return '0 B';
-                const k = 1024;
-                const sizes = ['B', 'KB', 'MB', 'GB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-            }
-
-            focusOnMilestone(milestoneEvent) {
-                const eventIndex = this.data.events.indexOf(milestoneEvent);
-                if (eventIndex !== -1) {
-                    this.setCurrentEvent(eventIndex);
-                    
-                    // Animate camera to milestone
-                    const zPosition = -eventIndex * this.zSpacing;
-                    this.animateCameraTo(
-                        new THREE.Vector3(80, 50, zPosition + 50),
-                        new THREE.Vector3(80, 0, zPosition)
-                    );
-                }
-            }
-
-            animateCameraTo(position, target) {
-                const startPosition = this.camera.position.clone();
-                const endPosition = position.clone();
-                
-                let progress = 0;
-                const animate = () => {
-                    progress += 0.02;
-                    
-                    if (progress <= 1) {
-                        this.camera.position.lerpVectors(startPosition, endPosition, progress);
-                        this.camera.lookAt(target);
-                        requestAnimationFrame(animate);
-                    } else {
-                        this.controls.target.copy(target);
-                        this.controls.update();
-                    }
-                };
-                
-                animate();
             }
 
             play() {
@@ -1526,12 +1814,22 @@
             }
 
             setCurrentEvent(index) {
-                if (!this.data || index < 0 || index >= this.data.events.length) return;
+                if (!this.data || index < 0 || index >= this.data.events.length) {
+                    console.log('Invalid event index:', index);
+                    return;
+                }
+                
+                console.log(`Setting current event to index ${index}:`, {
+                    eventType: this.data.events[index].event_type,
+                    eventId: this.data.events[index].event_id,
+                    timestamp: this.data.events[index].timestamp
+                });
                 
                 this.currentEventIndex = index;
                 document.getElementById('timeline-slider').value = index;
                 this.updateVisualization();
                 this.updateGanttChart();
+                this.updateCameraPosition();
             }
 
             toggleSunburst() {
@@ -1556,13 +1854,10 @@
             }
 
             resetCamera() {
-                const numEvents = (this.data && this.data.events) ? this.data.events.length : 1;
-                const timelineLength = (numEvents - 1) * this.zSpacing;
-                
-                this.camera.position.set(100, 100, 200);
-                this.controls.target.set(0, 0, -timelineLength / 2);
-                this.camera.lookAt(this.controls.target);
-                this.controls.update();
+                // Inspector view - update camera position based on current event
+                this.userCameraPosition = null; // Reset user camera position
+                this.lastUserMove = 0; // Reset user move timestamp
+                this.updateCameraPosition();
             }
 
             onWindowResize() {
@@ -1591,6 +1886,137 @@
                 const loading = document.getElementById('loading');
                 loading.innerHTML = `<div class="error">Error: ${message}</div>`;
                 console.error('Visualizer Error:', message);
+            }
+
+            jumpToFileScan() {
+                if (!this.data || !this.data.events) return;
+                
+                // Find the last file_scan event to show all file_scan events
+                let lastFileScanIndex = -1;
+                for (let i = this.data.events.length - 1; i >= 0; i--) {
+                    if (this.data.events[i].event_type === 'file_scan') {
+                        lastFileScanIndex = i;
+                        break;
+                    }
+                }
+                
+                if (lastFileScanIndex !== -1) {
+                    console.log(`Jumping to last file_scan event at index ${lastFileScanIndex}`);
+                    this.setCurrentEvent(lastFileScanIndex);
+                } else {
+                    console.log('No file_scan events found in timeline');
+                }
+            }
+
+            updateCameraPosition() {
+                if (!this.data || !this.data.events || this.currentEventIndex < 0) {
+                    return;
+                }
+
+                // Find all milestones and file scans up to and including the current event
+                const eventsUpToCurrent = this.data.events.slice(0, this.currentEventIndex + 1);
+                const milestoneEvents = eventsUpToCurrent.filter(e => e.event_type === 'milestone');
+                const fileScanEvents = eventsUpToCurrent.filter(e => e.event_type === 'file_scan');
+
+                // Find the Y position for the current event
+                let targetY = 0;
+                const currentEvent = this.data.events[this.currentEventIndex];
+                if (currentEvent.event_type === 'milestone' && milestoneEvents.length > 0) {
+                    // Center on the current milestone
+                    const milestoneIndex = milestoneEvents.length - 1;
+                    targetY = milestoneIndex * 12;
+                } else if (currentEvent.event_type === 'file_scan' && fileScanEvents.length > 0) {
+                    // Center on the current file scan
+                    const fileScanIndex = fileScanEvents.length - 1;
+                    targetY = fileScanIndex * 12;
+                } else if (milestoneEvents.length > 0) {
+                    // Center on the last milestone before current event
+                    const milestoneIndex = milestoneEvents.length - 1;
+                    targetY = milestoneIndex * 12;
+                } else if (fileScanEvents.length > 0) {
+                    // Center on the last file scan before current event
+                    const fileScanIndex = fileScanEvents.length - 1;
+                    targetY = fileScanIndex * 12;
+                } else {
+                    // No milestones or file scans yet, default to 0
+                    targetY = 0;
+                }
+
+                // Set camera and controls target directly
+                this.camera.position.set(2.5, targetY + 30, 80);
+                this.controls.target.set(2.5, targetY, 0);
+                this.camera.lookAt(this.controls.target);
+                this.controls.update();
+            }
+
+            // Add to UnifiedTimelineVisualizer prototype:
+            getColorForNode(node) {
+                // Check cache first
+                if (this.colorCache.has(node)) {
+                    return this.colorCache.get(node);
+                }
+                let color;
+                if (node.type === 'folder') {
+                    color = this.colorMap['folder'];
+                } else {
+                    const mimeType = node.mime_type;
+                    if (!mimeType) {
+                        color = this.colorMap['default'];
+                    } else {
+                        // 1. Exact match
+                        if (this.colorMap[mimeType]) {
+                            color = this.colorMap[mimeType];
+                        } else {
+                            // 2. Check file extension for common types
+                            const extension = node.name && node.name.split('.').pop().toLowerCase();
+                            const extensionMap = {
+                                'msg': this.colorMap['application/vnd.ms-outlook.msg'],
+                                'eml': this.colorMap['message/rfc822'],
+                                'zip': this.colorMap['application/zip'],
+                                'rar': this.colorMap['application/x-rar-compressed'],
+                                '7z': this.colorMap['application/x-7z-compressed'],
+                                'tar': this.colorMap['application/x-tar'],
+                                'gz': this.colorMap['application/gzip'],
+                                'pdf': this.colorMap['application/pdf'],
+                                'docx': this.colorMap['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+                                'xlsx': this.colorMap['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+                                'doc': this.colorMap['application/vnd.ms-outlook'],
+                                'txt': this.colorMap['text/'],
+                                'md': this.colorMap['text/markdown']
+                            };
+                            if (extension && extensionMap[extension]) {
+                                color = extensionMap[extension];
+                            } else {
+                                // 3. Prefix match (e.g., image/, text/)
+                                let found = false;
+                                for (const [pattern, patternColor] of Object.entries(this.colorMap)) {
+                                    if (pattern.endsWith('/') && mimeType.startsWith(pattern)) {
+                                        color = patternColor;
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found) {
+                                    color = this.colorMap['default'];
+                                }
+                            }
+                        }
+                    }
+                }
+                // Always prefix with #
+                if (typeof color === 'string' && !color.startsWith('#')) {
+                    color = `#${color}`;
+                }
+                // HARDEN: If color is empty, null, or not a valid hex, force to #bdc3c7
+                if (!color || typeof color !== 'string' || !/^#([0-9a-fA-F]{3}){1,2}$/.test(color)) {
+                    console.warn('[Sunburst] Fallback to default color for node:', node, 'Got color:', color);
+                    color = '#bdc3c7';
+                }
+                // Debug: Log every node and its color
+                console.log('[Sunburst] Node color:', { name: node.name, type: node.type, mime: node.mime_type, color });
+                // Cache the color
+                this.colorCache.set(node, color);
+                return color;
             }
         }
 

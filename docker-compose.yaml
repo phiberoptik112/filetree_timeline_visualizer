@@ -7,8 +7,8 @@ services:
       dockerfile: Dockerfile.backend
     volumes:
       - shared-data:/shared
-      - /Users/jakepfitsch/Documents/sample_project_databaseWork/Project_1_Acoustic_Design/:/data
-    command: python unified_backend.py --scan-dir /data/ --email-dir /data/email_db --docs-dir /data/deliverables_db --output /shared/unified_timeline.json --correlate
+      - ./file_tree_timeline/sample_data/example_project:/data:ro
+    command: python unified_backend.py --scan-dir /data/ --output /shared/unified_timeline.json --correlate
 
   frontend:
     build:
