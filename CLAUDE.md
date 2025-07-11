@@ -10,7 +10,7 @@ This is a **Unified Timeline Visualizer** that combines file system scanning wit
 
 1. **Unified Backend (`unified_backend.py`)**: Combines file tree scanning and email milestone extraction into a single timeline. Uses `TimelineEvent` dataclass to unify both file scans and milestones, performs correlation analysis between file changes and communication events, and exports unified JSON data.
 
-2. **Unified Frontend (`unified_visualizer.html`)**: Interactive 3D visualization combining sunburst charts (file trees) with 3D Gantt bars (milestones). Supports timeline scrubbing, correlation visualization, and synchronized view controls.
+2. **Unified Frontend (`unified_visualizer.html`)**: Interactive 3D visualization combining sunburst charts (file trees) with 3D Gantt bars (milestones). Supports timeline scrubbing, correlation visualization, and synchronized view controls. **Recently refactored into modular architecture** with separate CSS files, configuration files, and specialized JavaScript classes for better maintainability and extensibility.
 
 3. **Legacy Components**: Original `file-tree-timeline/` (file scanning) and `milestone_email_generator/` (email processing) maintained for reference and component testing.
 
@@ -20,6 +20,34 @@ This is a **Unified Timeline Visualizer** that combines file system scanning wit
 Email Files + Directory Scan → Unified Backend → SQLite Database (events + correlations) → JSON Export → 3D Visualization
 
 The unified system uses correlation analysis to link file changes with milestone events based on temporal proximity and file name mentions in communications.
+
+### Modular Frontend Architecture (New)
+
+The frontend has been refactored into a modular architecture:
+
+**Configuration Layer**:
+- `config/config.js` - Core application settings
+- `config/colors.js` - Color schemes and mappings  
+- `config/settings.js` - User preferences
+
+**Styling Layer**:
+- `styles/main.css` - Base layout and global styles
+- `styles/panels.css` - UI panels and containers
+- `styles/controls.css` - Form controls and buttons
+- `styles/visualization.css` - Visualization-specific styles
+
+**Component Layer**:
+- `js/SceneManager.js` - Three.js scene setup and management
+- `js/UIManager.js` - DOM interactions and event handling
+- `js/DataManager.js` - Data loading, processing, and caching
+- `js/VisualizationManager.js` - Sunburst and Gantt chart rendering
+- `js/InteractionManager.js` - Mouse/touch interactions and highlighting
+- `js/TimelineController.js` - Timeline playback and navigation
+- `js/UnifiedTimelineVisualizer.js` - Main orchestrator class
+- `js/utils/ColorUtils.js` - Color processing utilities
+- `js/utils/FormatUtils.js` - Data formatting utilities
+
+This modular approach provides better maintainability, testability, and extensibility while maintaining the same user interface and functionality.
 
 ## Deployment Options
 

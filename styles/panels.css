@@ -1,0 +1,131 @@
+/* Panel styles */
+.panel {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(15px);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 20px;
+    z-index: 100;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+#control-panel {
+    top: 20px;
+    left: 20px;
+    max-width: 350px;
+}
+
+#info-panel {
+    top: 20px;
+    right: 20px;
+    max-width: 350px;
+}
+
+#timeline-controls {
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 15px 30px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+#gantt-panel {
+    bottom: 120px;
+    right: 20px;
+    max-width: 400px;
+    max-height: 400px;
+}
+
+#file-scan-slider-container {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 70px;
+    min-width: 220px;
+    max-width: 350px;
+    z-index: 201;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+}
+
+/* Control sections */
+.control-section {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.control-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.control-section h4 {
+    color: #4CAF50;
+    margin-bottom: 10px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Info items */
+.info-item {
+    margin: 10px 0;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.info-label {
+    font-size: 12px;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.info-value {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 3px;
+    color: #4CAF50;
+}
+
+/* Details panel */
+.details-panel {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(10px);
+    border-radius: 10px;
+    padding: 15px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    max-width: 300px;
+    z-index: 1000;
+}
+
+.details-title {
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: #4CAF50;
+}
+
+.details-content {
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.details-content .label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.details-content .value {
+    color: white;
+    font-weight: 500;
+}

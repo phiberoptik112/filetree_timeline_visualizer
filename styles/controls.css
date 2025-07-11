@@ -1,0 +1,111 @@
+/* Control elements */
+.sunburst-controls label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.sunburst-controls input[type="range"] {
+    width: 100%;
+    margin: 5px 0;
+}
+
+/* Timeline slider */
+.timeline-slider {
+    width: 400px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    outline: none;
+    appearance: none;
+}
+
+.timeline-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #4CAF50;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(76, 175, 80, 0.5);
+}
+
+.timeline-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #4CAF50;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 10px rgba(76, 175, 80, 0.5);
+}
+
+/* Buttons */
+.control-button {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    border: none;
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+    font-size: 12px;
+}
+
+.control-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+}
+
+.control-button.secondary {
+    background: linear-gradient(135deg, #6B7280, #4B5563);
+    box-shadow: 0 4px 15px rgba(107, 114, 128, 0.3);
+}
+
+.control-button.active {
+    background: linear-gradient(135deg, #FF6B6B, #EE5A52);
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+}
+
+/* Form inputs */
+input[type="text"], input[type="file"], select, textarea {
+    width: 100%;
+    padding: 5px;
+    margin-bottom: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: white;
+    font-family: inherit;
+}
+
+input[type="file"] {
+    padding: 6px;
+    border-radius: 6px;
+}
+
+textarea {
+    font-family: monospace;
+    font-size: 11px;
+    background: #0f1419;
+    color: #4CAF50;
+    resize: vertical;
+}
+
+/* Color pickers */
+input[type="color"] {
+    width: 50px;
+    height: 30px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* Labels */
+label {
+    font-size: 12px;
+    margin-bottom: 4px;
+    display: block;
+}
