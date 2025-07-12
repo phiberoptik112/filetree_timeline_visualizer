@@ -17,6 +17,19 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional, Any, Union
 from email.header import decode_header
+import configparser
+
+# Add CommunicationThread dataclass
+@dataclass
+class CommunicationThread:
+    """Represents a thread of related communications"""
+    thread_id: str
+    subject: str
+    participants: List[str]
+    start_date: float
+    end_date: float
+    message_count: int
+    key_topics: List[str]
 
 # Try to import optional dependencies
 try:
@@ -93,14 +106,13 @@ class TimelineEvent:
 class UnifiedTimelineGenerator:
     """Main class for generating unified timeline visualizations"""
     
-    def __init__(self, db_path: str = "unified_timeline.db"):
+    def __init__(self, db_path: str = "unified_timeline.db", recommendation_config: str = None):
         self.db_path = db_path
         self.ignore_patterns = {
             '.git', '__pycache__', 'node_modules', '.DS_Store', 
             '.env', '.vscode', '.idea', '*.pyc', '.pytest_cache',
             'venv', 'env', '.venv', 'dist', 'build', '*.db'
         }
-        
         # Milestone extraction patterns
         self.milestone_patterns = {
             'deadline': [
@@ -137,7 +149,6 @@ class UnifiedTimelineGenerator:
                 r'go\s+with\s+(.{10,100})'
             ]
         }
-        
         # File reference patterns
         self.file_patterns = [
             r'([a-zA-Z0-9_-]+\.(?:py|js|html|css|json|md|txt|pdf|doc|docx|xlsx|pptx|zip|tar|gz))',
@@ -147,9 +158,17 @@ class UnifiedTimelineGenerator:
             r'`([^`]+\.[a-zA-Z0-9]+)`',  # Files in backticks
             r'"([^"]+\.[a-zA-Z0-9]+)"',  # Files in quotes
         ]
-        
+        # Load recommendation keywords/phrases from config file
+        self.recommendation_phrases = []
+        if recommendation_config:
+            self._load_recommendation_phrases(recommendation_config)
         self._init_database()
     
+    def _load_recommendation_phrases(self, config_path):
+        # Config file: one phrase per line, ignore empty lines and comments
+        with open(config_path, 'r') as f:
+            self.recommendation_phrases = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+
     def _init_database(self):
         """Initialize SQLite database with unified schema"""
         conn = sqlite3.connect(self.db_path)
@@ -177,6 +196,19 @@ class UnifiedTimelineGenerator:
                 created_at REAL DEFAULT (julianday('now')),
                 FOREIGN KEY (file_event_id) REFERENCES events (event_id),
                 FOREIGN KEY (milestone_event_id) REFERENCES events (event_id)
+            )
+        ''')
+        
+        # Add communication_threads table (from milestone_generator.py)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS communication_threads (
+                thread_id TEXT PRIMARY KEY,
+                subject TEXT,
+                participants TEXT,
+                start_date REAL,
+                end_date REAL,
+                message_count INTEGER,
+                key_topics TEXT
             )
         ''')
         
@@ -916,6 +948,226 @@ class UnifiedTimelineGenerator:
                     milestones.append(milestone)
         
         return milestones
+
+    def extract_recommendations_from_text(self, text: str, source_id: str, timestamp: float) -> List[TimelineEvent]:
+        """Scan text for user-defined recommendation phrases and create recommendation events"""
+        events = []
+        for phrase in self.recommendation_phrases:
+            # Case-insensitive search for phrase
+            for match in re.finditer(re.escape(phrase), text, re.IGNORECASE):
+                # Extract context: sentence or paragraph
+                start, end = match.span()
+                # Find sentence boundaries
+                before = text.rfind('.', 0, start)
+                after = text.find('.', end)
+                context = text[before+1:after+1].strip() if before != -1 and after != -1 else text[max(0, start-60):min(len(text), end+60)].strip()
+                event_id = f"recommendation_{hash(source_id + phrase + str(start))}"
+                event = TimelineEvent(
+                    event_id=event_id,
+                    timestamp=timestamp,
+                    event_type='recommendation',
+                    metadata={
+                        'phrase': phrase,
+                        'context': context,
+                        'source_id': source_id
+                    }
+                )
+                events.append(event)
+        return events
+
+    def extract_communication_threads(self, email_directory: str) -> List[CommunicationThread]:
+        """Extract communication threads from emails (group by subject/participants) and store in DB"""
+        from collections import defaultdict
+        import hashlib
+        import json
+        email_path = Path(email_directory)
+        thread_groups = defaultdict(list)
+        email_infos = []
+
+        # Helper to normalize subject
+        def normalize_subject(subject):
+            subject = subject.lower().strip()
+            for prefix in ["re:", "fw:", "fwd:"]:
+                if subject.startswith(prefix):
+                    subject = subject[len(prefix):].strip()
+            return subject
+
+        # Parse all emails and group by (normalized subject, sorted participants)
+        for pattern in ['*.eml', '*.msg', '*.txt']:
+            for email_file in email_path.glob(pattern):
+                try:
+                    if email_file.suffix.lower() == '.msg':
+                        msg = None
+                        if MSG_SUPPORT:
+                            import extract_msg
+                            msg_obj = extract_msg.Message(str(email_file))
+                            subject = msg_obj.subject or ""
+                            sender = msg_obj.sender or ""
+                            date = msg_obj.date
+                            body = msg_obj.body or ""
+                            # Convert date to timestamp
+                            if date:
+                                try:
+                                    timestamp = datetime.strptime(date, "%a, %d %b %Y %H:%M:%S %z").timestamp()
+                                except Exception:
+                                    try:
+                                        timestamp = datetime.strptime(date, "%Y-%m-%d %H:%M:%S").timestamp()
+                                    except Exception:
+                                        timestamp = datetime.now().timestamp()
+                            else:
+                                timestamp = datetime.now().timestamp()
+                            participants = [sender]
+                            if hasattr(msg_obj, 'to') and msg_obj.to:
+                                participants.extend(msg_obj.to.split(';'))
+                            if hasattr(msg_obj, 'cc') and msg_obj.cc:
+                                participants.extend(msg_obj.cc.split(';'))
+                            participants = [p.strip() for p in participants if p.strip()]
+                        else:
+                            continue
+                    elif email_file.suffix.lower() == '.eml':
+                        with open(email_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            import email as pyemail
+                            msg = pyemail.message_from_file(f)
+                            subject = msg.get('Subject', '')
+                            sender = msg.get('From', '')
+                            date_str = msg.get('Date', '')
+                            try:
+                                timestamp = pyemail.utils.parsedate_to_datetime(date_str).timestamp()
+                            except Exception:
+                                timestamp = datetime.now().timestamp()
+                            # Participants
+                            participants = []
+                            for header in ['From', 'To', 'Cc']:
+                                value = msg.get(header, '')
+                                if value:
+                                    emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', value)
+                                    participants.extend(emails)
+                            participants = list(set([p.strip() for p in participants if p.strip()]))
+                    elif email_file.suffix.lower() == '.txt':
+                        with open(email_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            lines = f.read().split('\n')
+                        subject = ""
+                        sender = ""
+                        date_str = ""
+                        participants = []
+                        body_start = 0
+                        for i, line in enumerate(lines):
+                            line_lower = line.lower().strip()
+                            if line_lower.startswith('subject:'):
+                                subject = line[8:].strip()
+                            elif line_lower.startswith('from:'):
+                                sender = line[5:].strip()
+                                participants.append(sender)
+                            elif line_lower.startswith('to:'):
+                                to_addresses = line[3:].strip().split(',')
+                                participants.extend([addr.strip() for addr in to_addresses])
+                            elif line_lower.startswith('cc:'):
+                                cc_addresses = line[3:].strip().split(',')
+                                participants.extend([addr.strip() for addr in cc_addresses])
+                            elif line_lower.startswith('date:'):
+                                date_str = line[5:].strip()
+                            elif line.strip() == "" and i > 0:
+                                body_start = i + 1
+                                break
+                        try:
+                            for fmt in [
+                                "%a, %d %b %Y %H:%M:%S %z",
+                                "%Y-%m-%d %H:%M:%S",
+                                "%m/%d/%Y %H:%M",
+                                "%d/%m/%Y %H:%M"
+                            ]:
+                                try:
+                                    timestamp = datetime.strptime(date_str, fmt).timestamp()
+                                    break
+                                except Exception:
+                                    continue
+                            else:
+                                timestamp = datetime.now().timestamp()
+                        except Exception:
+                            timestamp = datetime.now().timestamp()
+                        participants = [p.strip() for p in participants if p.strip()]
+                    else:
+                        continue
+                    norm_subject = normalize_subject(subject)
+                    key = (norm_subject, tuple(sorted(participants)))
+                    email_infos.append({
+                        'subject': norm_subject,
+                        'participants': participants,
+                        'timestamp': timestamp,
+                        'file': str(email_file)
+                    })
+                    thread_groups[key].append(timestamp)
+                except Exception as e:
+                    print(f"Error processing {email_file}: {e}")
+
+        threads = []
+        for (subject, participants), timestamps in thread_groups.items():
+            if not timestamps:
+                continue
+            start_date = min(timestamps)
+            end_date = max(timestamps)
+            message_count = len(timestamps)
+            # Simple key_topics: most common words in subject (could be improved)
+            words = re.findall(r'\w+', subject)
+            word_freq = {}
+            for w in words:
+                word_freq[w] = word_freq.get(w, 0) + 1
+            key_topics = sorted(word_freq, key=word_freq.get, reverse=True)[:5]
+            thread_id = hashlib.sha1((subject + ' '.join(participants)).encode('utf-8')).hexdigest()
+            thread = CommunicationThread(
+                thread_id=thread_id,
+                subject=subject,
+                participants=list(participants),
+                start_date=start_date,
+                end_date=end_date,
+                message_count=message_count,
+                key_topics=key_topics
+            )
+            threads.append(thread)
+        self._store_communication_threads(threads)
+        return threads
+
+    def _store_communication_threads(self, threads: List[CommunicationThread]):
+        import json
+        conn = sqlite3.connect(self.db_path)
+        for thread in threads:
+            conn.execute('''
+                INSERT OR REPLACE INTO communication_threads
+                (thread_id, subject, participants, start_date, end_date, message_count, key_topics)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                thread.thread_id,
+                thread.subject,
+                json.dumps(thread.participants),
+                thread.start_date,
+                thread.end_date,
+                thread.message_count,
+                json.dumps(thread.key_topics)
+            ))
+        conn.commit()
+        conn.close()
+
+    def export_communication_threads(self, output_file: str = "communication_threads.json") -> None:
+        """Export all communication threads to a JSON file"""
+        import json
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute('SELECT thread_id, subject, participants, start_date, end_date, message_count, key_topics FROM communication_threads ORDER BY start_date')
+        threads = []
+        for row in cursor.fetchall():
+            thread = {
+                'thread_id': row[0],
+                'subject': row[1],
+                'participants': json.loads(row[2]),
+                'start_date': row[3],
+                'end_date': row[4],
+                'message_count': row[5],
+                'key_topics': json.loads(row[6])
+            }
+            threads.append(thread)
+        conn.close()
+        with open(output_file, 'w') as f:
+            json.dump({'threads': threads}, f, indent=2)
+        print(f"Exported {len(threads)} communication threads to {output_file}")
 
 
 def main():
