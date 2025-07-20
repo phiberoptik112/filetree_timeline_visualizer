@@ -54,6 +54,9 @@ class VisualizationManager {
     
     // Main visualization update method
     updateVisualization(events) {
+        console.log('updateVisualization called with', events?.length || 0, 'events');
+        console.log('Visibility flags:', { showSunburst: this.showSunburst, showGantt: this.showGantt, showConnections: this.showConnections });
+        
         this.clearVisualization();
         
         if (!events || events.length === 0) {
@@ -64,16 +67,25 @@ class VisualizationManager {
         console.log('Updating visualization with', events.length, 'events');
         
         if (this.showSunburst) {
+            console.log('Creating sunburst visualization...');
             this.createSunburstVisualization(events);
         }
         
         if (this.showGantt) {
+            console.log('Creating Gantt visualization...');
             this.createGanttVisualization(events);
         }
         
         if (this.showConnections) {
+            console.log('Creating connection visualization...');
             this.createConnectionVisualization(events);
         }
+        
+        console.log('Visualization update complete. Group visibilities:', {
+            sunburst: this.sunburstGroup.visible,
+            gantt: this.ganttGroup.visible,
+            connections: this.connectionGroup.visible
+        });
     }
     
     // Clear all visualizations
@@ -298,8 +310,15 @@ class VisualizationManager {
     
     // Gantt visualization
     createGanttVisualization(events) {
+        console.log('createGanttVisualization called with', events.length, 'events');
+        
         const milestoneEvents = events.filter(e => e.event_type === 'milestone');
-        if (milestoneEvents.length === 0) return;
+        console.log('Filtered milestone events:', milestoneEvents.length);
+        
+        if (milestoneEvents.length === 0) {
+            console.log('No milestone events found, returning early');
+            return;
+        }
         
         console.log('Creating gantt for', milestoneEvents.length, 'milestone events');
         
@@ -314,21 +333,32 @@ class VisualizationManager {
         const minY = this.ganttConfig.MIN_Y || 0;
         const maxY = this.ganttConfig.MAX_Y || 100;
         
+        console.log('Time range:', { minTime, maxTime, minY, maxY });
+        
         // Create timeline axis
+        console.log('Creating timeline axis...');
         this.createTimelineAxis(minY, maxY);
         
         // Create milestone bars
+        console.log('Creating milestone bars...');
         milestoneEvents.forEach((event, index) => {
+            console.log(`Processing milestone ${index + 1}/${milestoneEvents.length}: ${event.metadata.title}`);
             this.createMilestoneBar(event, minTime, maxTime, minY, maxY, index);
         });
+        
+        console.log('Gantt visualization creation complete. Total children in ganttGroup:', this.ganttGroup.children.length);
     }
     
     createTimelineAxis(minY, maxY) {
+        console.log(`Creating timeline axis from Y=${minY} to Y=${maxY}`);
+        
         const axisConfig = this.ganttConfig;
+        const axisHeight = maxY - minY + 10;
+        
         const axisGeometry = new THREE.CylinderGeometry(
             axisConfig.AXIS_WIDTH || 0.3,
             axisConfig.AXIS_WIDTH || 0.3,
-            maxY - minY + 10,
+            axisHeight,
             32
         );
         
@@ -337,8 +367,14 @@ class VisualizationManager {
         });
         
         const axisMesh = new THREE.Mesh(axisGeometry, axisMaterial);
-        axisMesh.position.set(0, (minY + maxY) / 2, 0);
+        const axisY = (minY + maxY) / 2;
+        axisMesh.position.set(0, axisY, 0);
+        
+        console.log(`Timeline axis created: height=${axisHeight}, position=(0, ${axisY}, 0), color=${axisConfig.AXIS_COLOR || 0xff00ff}`);
+        
         this.ganttGroup.add(axisMesh);
+        
+        console.log(`Timeline axis added to ganttGroup. Group now has ${this.ganttGroup.children.length} children`);
     }
     
     createMilestoneBar(event, minTime, maxTime, minY, maxY, index) {
@@ -353,6 +389,14 @@ class VisualizationManager {
         const startY = this.timestampToY(startTime, minTime, maxTime, minY, maxY);
         const intendedBarHeight = this.timestampToY(intendedEnd, minTime, maxTime, minY, maxY) - startY;
         const actualBarHeight = this.timestampToY(actualEnd, minTime, maxTime, minY, maxY) - startY;
+        
+        // Debug logging
+        console.log(`Creating milestone bar for "${milestone.title}":`, {
+            startTime, endTime, startY, 
+            intendedBarHeight, actualBarHeight,
+            intendedColor: milestone.intended_color,
+            actualColor: milestone.actual_color
+        });
         
         // Colors
         const intendedColor = new THREE.Color(milestone.intended_color || '#ff00ff');
@@ -374,6 +418,8 @@ class VisualizationManager {
         
         // Create text label
         this.createTextLabel(milestone.title, barOffsetX + 4, startY + intendedBarHeight + 2, 0);
+        
+        console.log(`Milestone bar created at position: x=${barOffsetX}, y=${startY + actualBarHeight / 2}, z=0`);
     }
     
     createTickMarker(y, z) {
@@ -413,37 +459,63 @@ class VisualizationManager {
     
     createIntendedBar(x, y, height, color) {
         const barConfig = this.ganttConfig.INTENDED_BAR_SIZE || {};
+        
+        // Ensure minimum height for visibility
+        const minHeight = 2; // Minimum 2 units height
+        const actualHeight = Math.max(Math.abs(height), minHeight);
+        
         const geometry = new THREE.BoxGeometry(
             barConfig.width || 2,
-            Math.abs(height),
+            actualHeight,
             barConfig.depth || 2
         );
         
         const edges = new THREE.EdgesGeometry(geometry);
         const material = new THREE.LineBasicMaterial({
             color: color,
-            linewidth: 2
+            linewidth: 3 // Make wireframe more visible
         });
         
         const wireframe = new THREE.LineSegments(edges, material);
-        wireframe.position.set(x, y + height / 2, 0);
+        wireframe.position.set(x, y + actualHeight / 2, 0);
+        
+        // Debug logging
+        console.log(`Creating intended bar wireframe: size=${barConfig.width || 2}x${actualHeight}x${barConfig.depth || 2}, position=(${x}, ${y + actualHeight / 2}, 0), color:`, color);
+        
         this.ganttGroup.add(wireframe);
     }
     
     createActualBar(x, y, height, color) {
         const barConfig = this.ganttConfig.ACTUAL_BAR_SIZE || {};
+        
+        // Ensure minimum height for visibility
+        const minHeight = 2; // Minimum 2 units height
+        const actualHeight = Math.max(Math.abs(height), minHeight);
+        
         const geometry = new THREE.BoxGeometry(
             barConfig.width || 1.2,
-            Math.abs(height),
+            actualHeight,
             barConfig.depth || 1.2
         );
         
-        const material = new THREE.MeshLambertMaterial({ color: color });
+        // Use MeshBasicMaterial for debugging (doesn't require lighting)
+        const material = new THREE.MeshBasicMaterial({ 
+            color: color,
+            transparent: false,
+            opacity: 1.0
+        });
         const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(x, y + height / 2, 0);
+        mesh.position.set(x, y + actualHeight / 2, 0);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        
+        // Debug logging
+        console.log(`Creating actual bar: size=${barConfig.width || 1.2}x${actualHeight}x${barConfig.depth || 1.2}, position=(${x}, ${y + actualHeight / 2}, 0), color:`, color);
+        
         this.ganttGroup.add(mesh);
+        
+        // Verify it was added
+        console.log(`Gantt group now has ${this.ganttGroup.children.length} children`);
     }
     
     // Connection visualization

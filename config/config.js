@@ -6,8 +6,8 @@ const CONFIG = {
             FOV: 60,
             NEAR: 1,
             FAR: 20000,
-            INITIAL_POSITION: { x: 2.5, y: 30, z: 80 },
-            INITIAL_LOOK_AT: { x: 2.5, y: 0, z: 0 }
+            INITIAL_POSITION: { x: 15, y: 50, z: 80 },
+            INITIAL_LOOK_AT: { x: 10, y: 25, z: 0 }
         },
         CONTROLS: {
             ENABLE_DAMPING: true,

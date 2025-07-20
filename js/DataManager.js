@@ -227,8 +227,41 @@ class DataManager {
                         confidence: 0.9,
                         start_time: Math.floor(Date.now() / 1000) - 43200,
                         end_time: Math.floor(Date.now() / 1000) - 39600,
+                        duration: 3600, // 1 hour
                         intended_color: '#3B82F6',
                         actual_color: '#10B981'
+                    }
+                },
+                {
+                    event_id: 'sample_milestone_2',
+                    event_type: 'milestone',
+                    timestamp: Math.floor(Date.now() / 1000) - 21600, // 6 hours ago
+                    metadata: {
+                        title: 'Requirements Review',
+                        category: 'deliverable',
+                        priority: 'medium',
+                        confidence: 0.8,
+                        start_time: Math.floor(Date.now() / 1000) - 21600,
+                        end_time: Math.floor(Date.now() / 1000) - 19800,
+                        duration: 1800, // 30 minutes
+                        intended_color: '#F59E0B',
+                        actual_color: '#EF4444'
+                    }
+                },
+                {
+                    event_id: 'sample_milestone_3',
+                    event_type: 'milestone',
+                    timestamp: Math.floor(Date.now() / 1000) - 7200, // 2 hours ago
+                    metadata: {
+                        title: 'Design Phase Complete',
+                        category: 'deadline',
+                        priority: 'high',
+                        confidence: 0.9,
+                        start_time: Math.floor(Date.now() / 1000) - 7200,
+                        end_time: Math.floor(Date.now() / 1000) - 5400,
+                        duration: 1800, // 30 minutes
+                        intended_color: '#8B5CF6',
+                        actual_color: '#06B6D4'
                     }
                 },
                 {
@@ -253,11 +286,11 @@ class DataManager {
                 generation_time: Math.floor(Date.now() / 1000),
                 event_types: {
                     file_scan: 2,
-                    milestone: 1
+                    milestone: 3
                 }
             }
         };
-        
+
         this.data = sampleData;
         this.processLoadedData();
         this.dispatchEvent('data-loaded', { data: this.data, filename: 'sample_data.json' });
