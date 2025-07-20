@@ -7,7 +7,8 @@ class DataManager {
         this.cache = new Map();
         this.processingQueue = [];
         this.isProcessing = false;
-        
+        this.apiBaseUrl = 'http://localhost:8000/api/v1';
+        this.fallbackFile = 'unified_timeline.json';  // Keep as backup
         // Configuration
         this.config = window.CONFIG || {};
         this.fileConfig = this.config.FILES || {};
@@ -82,7 +83,35 @@ class DataManager {
             throw error;
         }
     }
+    async loadData(projectId = null) {
+        try {
+            // Try API first
+            const data = await this.loadFromAPI(projectId);
+            this.data = data;
+            this.processLoadedData();
+            return data;
+        } catch (error) {
+            console.warn('API failed, falling back to local file:', error);
+            // Fallback to your existing file-based system
+            return this.loadFromFile();
+        }
+    }
     
+    async loadFromAPI(projectId) {
+        const url = projectId ? 
+            `${this.apiBaseUrl}/unified-timeline/${projectId}/` :
+            `${this.apiBaseUrl}/unified-timeline/`;
+            
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    }
+    
+    async loadFromFile() {
+        // Your existing file loading logic
+        const response = await fetch(this.fallbackFile);
+        return response.json();
+    }
     async loadCustomFile(file) {
         try {
             this.userLoadedFile = true;
@@ -268,50 +297,78 @@ class DataManager {
     generateSampleTreeStructure() {
         return {
             name: 'sample_project',
-            type: 'folder',
+            path: '',
             size: 1024000,
+            file_count: 4,
+            depth: 0,
             children: [
                 {
-                    name: 'src',
                     type: 'folder',
-                    size: 512000,
-                    children: [
-                        {
-                            name: 'main.js',
-                            type: 'file',
-                            size: 2048,
-                            mime_type: 'text/javascript',
-                            file_hash: 'abc123'
-                        },
-                        {
-                            name: 'style.css',
-                            type: 'file',
-                            size: 1024,
-                            mime_type: 'text/css',
-                            file_hash: 'def456'
-                        }
-                    ]
+                    data: {
+                        name: 'src',
+                        path: 'src',
+                        size: 512000,
+                        file_count: 2,
+                        depth: 1,
+                        children: [
+                            {
+                                type: 'file',
+                                data: {
+                                    name: 'main.js',
+                                    path: 'main.js',
+                                    size: 2048,
+                                    mime_type: 'text/javascript',
+                                    file_hash: 'abc123',
+                                    depth: 2
+                                }
+                            },
+                            {
+                                type: 'file',
+                                data: {
+                                    name: 'style.css',
+                                    path: 'style.css',
+                                    size: 1024,
+                                    mime_type: 'text/css',
+                                    file_hash: 'def456',
+                                    depth: 2
+                                }
+                            }
+                        ]
+                    }
                 },
                 {
-                    name: 'docs',
                     type: 'folder',
-                    size: 256000,
-                    children: [
-                        {
-                            name: 'README.md',
-                            type: 'file',
-                            size: 512,
-                            mime_type: 'text/markdown',
-                            file_hash: 'ghi789'
-                        }
-                    ]
+                    data: {
+                        name: 'docs',
+                        path: 'docs',
+                        size: 256000,
+                        file_count: 1,
+                        depth: 1,
+                        children: [
+                            {
+                                type: 'file',
+                                data: {
+                                    name: 'README.md',
+                                    path: 'README.md',
+                                    size: 512,
+                                    mime_type: 'text/markdown',
+                                    file_hash: 'ghi789',
+                                    depth: 2
+                                }
+                            }
+                        ]
+                    }
                 },
                 {
-                    name: 'package.json',
                     type: 'file',
-                    size: 256,
-                    mime_type: 'application/json',
-                    file_hash: 'jkl012'
+                    data: {
+                        name: 'package.json',
+                        path: 'package.json',
+                        size: 256,
+                        mime_type: 'application/json',
+                        file_hash: 'jkl012',
+                        depth: 1
+                    }
                 }
             ]
         };

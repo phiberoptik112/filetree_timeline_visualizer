@@ -225,7 +225,8 @@ class UnifiedTimelineVisualizer {
     
     onNodeClicked(detail) {
         console.log('Node clicked:', detail.node);
-        // Could implement node expansion, details view, etc.
+        // Show details for the clicked node
+        this.components.interactionManager.showNodeDetails(detail.node);
     }
     
     // Helper methods

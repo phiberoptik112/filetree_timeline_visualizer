@@ -123,6 +123,63 @@ python unified_backend.py \
 - Includes correlation strength (0.0-1.0)
 - Correlation type: 'temporal_file_mention'
 
+## Recommendation Extraction Feature
+
+You can now extract user-defined recommendations or engineering aspects from emails and documents. This feature scans for keywords/phrases (e.g., "recommendation", "risk mitigation", "best practice") and creates separate 'recommendation' events in the timeline.
+
+### 1. Create a Recommendation Phrases Config File
+
+Create a file (e.g., `recommendation_phrases.txt`) with one phrase or keyword per line:
+
+```
+# Recommendation phrases for engineering project analysis
+recommendation
+risk mitigation
+best practice
+schedule optimization
+# ... add more as needed
+```
+
+### 2. Using the Feature from the Command Line
+
+If your CLI supports it, add a flag for the config file (e.g., `--recommendation-config`). Example:
+
+```bash
+python unified_backend.py --scan-dir path/to/project --email-dir path/to/emails --output unified_timeline.json --recommendation-config recommendation_phrases.txt
+```
+
+This will:
+- Scan all emails and documents for the listed phrases.
+- Add a 'recommendation' event to the timeline for each match, including the phrase and its context.
+- Export these events in the unified timeline JSON.
+
+### 3. Using the Feature from Python
+
+```python
+from unified_backend import UnifiedTimelineGenerator
+
+gen = UnifiedTimelineGenerator(
+    db_path="unified_timeline.db",
+    recommendation_config="recommendation_phrases.txt"
+)
+gen.extract_milestones_from_emails("path/to/emails")
+gen.extract_milestones_from_documents("path/to/docs")
+gen.export_unified_timeline("unified_timeline.json")
+```
+
+### 4. Output
+
+- The exported `unified_timeline.json` will include events of type `"recommendation"` with metadata:
+  - `phrase`: the matched phrase
+  - `context`: the sentence or paragraph where the phrase was found
+  - `source_id`: the file or email where the match occurred
+
+### 5. Integration
+
+- These recommendation events can be used for downstream analysis, visualization, or API integration (e.g., with Django).
+
+---
+
 ## License
 
 [Add your license information here]

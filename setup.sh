@@ -544,6 +544,7 @@ deploy_kubernetes() {
         # Deploy individual components
         kubectl apply -f namespace.yaml
         kubectl apply -f configmap.yaml
+        kubectl apply -f recommendation-configmap.yaml
         kubectl apply -f secrets.yaml
         kubectl apply -f persistent-volumes.yaml
         kubectl apply -f rbac.yaml

@@ -29,8 +29,15 @@ class ColorUtils {
     
     // Get color for file node with fallback logic
     getFileColor(node, returnAsHex = true) {
+        // Handle nested data structure from backend
+        // Root nodes are flat, child nodes are nested
+        const nodeData = node.data || node;
+        const nodeType = node.type || nodeData.type || (node.children ? 'folder' : 'file');
+        const nodeName = nodeData.name || '';
+        const nodeMimeType = nodeData.mime_type || '';
+        
         // Check cache first
-        const cacheKey = `${node.name}_${node.type}_${node.mime_type}`;
+        const cacheKey = `${nodeName}_${nodeType}_${nodeMimeType}`;
         if (this.colorCache.has(cacheKey)) {
             const cached = this.colorCache.get(cacheKey);
             return returnAsHex ? this.threeToHex(cached) : cached;
@@ -38,10 +45,10 @@ class ColorUtils {
         
         let color;
         
-        if (node.type === 'folder') {
+        if (nodeType === 'folder') {
             color = this.colors.FILE_TYPES?.folder || '#a73a81';
         } else {
-            color = this.getColorForMimeType(node.mime_type, node.name);
+            color = this.getColorForMimeType(nodeMimeType, nodeName);
         }
         
         // Ensure color is in the correct format

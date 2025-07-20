@@ -22,7 +22,7 @@ class InteractionManager {
         
         // Timing
         this.lastHoverTime = 0;
-        this.hoverDelay = this.interactionConfig.HOVER_DELAY || 100;
+        this.hoverDelay = this.interactionConfig.HOVER_DELAY || 0; // Temporarily set to 0 for debugging
         
         this.init();
     }
@@ -51,6 +51,9 @@ class InteractionManager {
     onMouseMove(event) {
         this.updateMousePosition(event);
         
+        // Debug: Always log mouse position
+        console.log('Mouse position:', this.mouse.x, this.mouse.y);
+        
         // Debounce hover detection
         const now = Date.now();
         if (now - this.lastHoverTime < this.hoverDelay) {
@@ -58,6 +61,7 @@ class InteractionManager {
         }
         this.lastHoverTime = now;
         
+        console.log('Mouse move detected, performing raycast...');
         this.performRaycast();
         this.handleHoverInteraction(event.clientX, event.clientY);
     }
@@ -66,6 +70,7 @@ class InteractionManager {
         this.clearHighlights();
         this.hideDetailsPanel();
         this.hoveredObject = null;
+        this.uiManager.clearHoverInfo();
     }
     
     onClick(event) {
@@ -94,6 +99,7 @@ class InteractionManager {
     onTouchEnd(event) {
         this.clearHighlights();
         this.hideDetailsPanel();
+        this.uiManager.clearHoverInfo();
     }
     
     updateMousePosition(event) {
@@ -114,18 +120,24 @@ class InteractionManager {
         // Get intersectable objects from visualization manager
         const intersects = this.visualizationManager.getIntersectedObjects(this.raycaster);
         
+        console.log('Raycast found', intersects.length, 'intersections');
+        
         if (intersects.length > 0) {
             const intersected = intersects[0].object;
+            console.log('Intersected object userData:', intersected.userData);
             
             if (this.hoveredObject !== intersected) {
+                console.log('New hover object detected');
                 this.hoveredObject = intersected;
                 this.handleObjectHover(intersected);
             }
         } else {
             if (this.hoveredObject) {
+                console.log('Clearing hover object');
                 this.hoveredObject = null;
                 this.clearHighlights();
                 this.hideDetailsPanel();
+                this.uiManager.clearHoverInfo();
             }
         }
     }
@@ -146,7 +158,9 @@ class InteractionManager {
     }
     
     handleSunburstHover(mesh) {
+        console.log('=== HOVER EVENT TRIGGERED ===');
         const node = mesh.userData.node;
+        console.log('Hover node:', node);
         
         // Highlight the entire path from root to this node
         this.visualizationManager.highlightPath(node);
@@ -217,13 +231,29 @@ class InteractionManager {
     
     // Details panel methods
     showNodeDetails(node) {
-        const title = node.name || 'File/Folder';
+        // Handle the nested data structure from the backend
+        // Root nodes are flat, child nodes are nested
+        const nodeData = node.data || node;
+        const nodeType = node.type || nodeData.type || (node.children ? 'folder' : 'file');
+        
+        const title = nodeData.name || 'File/Folder';
+        
+        // Debug: Log the actual name being extracted
+        console.log('=== TOOLTIP DEBUG ===');
+        console.log('Node:', node);
+        console.log('NodeData:', nodeData);
+        console.log('Extracted name:', nodeData.name);
+        console.log('Final title:', title);
+        console.log('===================');
+        
         const details = {
-            Type: node.type || 'file',
-            Size: node.size ? this.formatUtils.formatBytes(node.size) : null,
-            'MIME Type': node.mime_type ? this.formatUtils.formatMimeType(node.mime_type) : null,
-            Hash: node.file_hash ? this.formatUtils.formatHash(node.file_hash) : null,
-            'File Count': node.file_count ? this.formatUtils.formatFileCount(node.file_count) : null
+            Type: nodeType,
+            Size: nodeData.size ? this.formatUtils.formatBytes(nodeData.size) : null,
+            'MIME Type': nodeData.mime_type ? this.formatUtils.formatMimeType(nodeData.mime_type) : null,
+            Hash: nodeData.file_hash ? this.formatUtils.formatHash(nodeData.file_hash) : null,
+            'File Count': nodeData.file_count ? this.formatUtils.formatFileCount(nodeData.file_count) : null,
+            Path: nodeData.path ? this.formatUtils.formatFilePath(nodeData.path) : null,
+            Depth: nodeData.depth !== undefined ? this.formatUtils.formatTreeDepth(nodeData.depth) : null
         };
         
         // Remove null values
@@ -236,13 +266,32 @@ class InteractionManager {
         
         const content = this.formatUtils.createDetailsContent(filteredDetails);
         this.currentDetailsContent = { title, content };
+        
+        // Also update the hover info panel
+        let hoverContent = `<strong>${title}</strong><br>`;
+        hoverContent += `<span style='color: #4CAF50;'>Type:</span> ${nodeType}<br>`;
+        if (nodeData.size) {
+            hoverContent += `<span style='color: #4CAF50;'>Size:</span> ${this.formatUtils.formatBytes(nodeData.size)}<br>`;
+        }
+        if (nodeType === 'file' && nodeData.mime_type) {
+            hoverContent += `<span style='color: #888;'>MIME:</span> ${this.formatUtils.formatMimeType(nodeData.mime_type)}<br>`;
+        } else if (nodeType === 'folder' && nodeData.file_count) {
+            hoverContent += `<span style='color: #888;'>Files:</span> ${this.formatUtils.formatFileCount(nodeData.file_count)}<br>`;
+        }
+        
+        this.uiManager.updateHoverInfo(hoverContent);
     }
     
     showConnectionDetails(connectionData) {
         const title = 'File Connection';
+        
+        // Handle nested data structure
+        const parentData = connectionData.parentNode?.data || connectionData.parentNode;
+        const childData = connectionData.childNode?.data || connectionData.childNode;
+        
         const details = {
-            'Parent': connectionData.parentNode?.name || 'Unknown',
-            'Child': connectionData.childNode?.name || 'Unknown',
+            'Parent': parentData?.name || 'Unknown',
+            'Child': childData?.name || 'Unknown',
             'Connection Type': connectionData.type || 'hierarchy'
         };
         
@@ -286,6 +335,7 @@ class InteractionManager {
     
     hideDetailsPanel() {
         this.uiManager.hideDetailsPanel();
+        this.uiManager.clearHoverInfo();
         this.currentDetailsContent = null;
     }
     
@@ -376,12 +426,16 @@ class InteractionManager {
         
         // Search in sunburst segments
         this.visualizationManager.segmentMeshes.forEach((mesh, node) => {
-            if (node.name && node.name.toLowerCase().includes(name.toLowerCase())) {
+            // Handle nested data structure
+            const nodeData = node.data || node;
+            const nodeName = nodeData.name || '';
+            
+            if (nodeName && nodeName.toLowerCase().includes(name.toLowerCase())) {
                 results.push({
                     type: 'node',
                     object: mesh,
                     node: node,
-                    name: node.name
+                    name: nodeName
                 });
             }
         });

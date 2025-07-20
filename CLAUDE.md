@@ -148,7 +148,7 @@ kubectl logs -f deployment/frontend -n filetree-timeline
 kubectl describe pod <pod-name> -n filetree-timeline
 ```
 
-## Key Implementation Details
+## Key Implementation **Details**
 
 ### Unified Backend Architecture
 - **TimelineEvent dataclass**: Unified container for both file_scan and milestone events

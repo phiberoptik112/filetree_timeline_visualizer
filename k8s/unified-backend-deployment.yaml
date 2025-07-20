@@ -61,6 +61,9 @@ spec:
           mountPath: /data
         - name: backup-volume
           mountPath: /data/backups
+        - name: recommendation-phrases
+          mountPath: /app/config/recommendation_phrases.txt
+          subPath: recommendation_phrases.txt
         resources:
           requests:
             memory: "256Mi"
@@ -68,6 +71,11 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
+        args:
+          - "--scan-dir=/data/project"
+          - "--email-dir=/data/emails"
+          - "--output=/data/unified_timeline.json"
+          - "--recommendation-config=/app/config/recommendation_phrases.txt"
         livenessProbe:
           httpGet:
             path: /health
@@ -91,4 +99,7 @@ spec:
       - name: backup-volume
         persistentVolumeClaim:
           claimName: filetree-timeline-backup-pvc
+      - name: recommendation-phrases
+        configMap:
+          name: recommendation-phrases
       restartPolicy: Always 

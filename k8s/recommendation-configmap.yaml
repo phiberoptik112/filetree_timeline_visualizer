@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recommendation-phrases
+  namespace: filetree-timeline
+  labels:
+    app: filetree-timeline-visualizer
+data:
+  recommendation_phrases.txt: |
+    # Recommendation phrases for engineering project analysis
+    recommendation
+    recommend
+    suggestion
+    suggest
+    best practice
+    risk mitigation
+    value engineering
+    cost reduction
+    schedule optimization
+    alternative approach
+    scope clarification
+    technical review
+    peer review
+    constructability
+    safety improvement
+    energy efficiency
+    sustainability
+    compliance requirement
+    code compliance
+    lessons learned
+    future consideration
+    # Add more phrases as needed below 

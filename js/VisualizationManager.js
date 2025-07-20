@@ -199,6 +199,7 @@ class VisualizationManager {
             node.parent = parentNode;
             
             const children = node.children || [];
+            
             const mesh = createRingSegment(node, innerRadius, outerRadius, startAngle, endAngle, depth);
             group.add(mesh);
             
@@ -214,13 +215,17 @@ class VisualizationManager {
             
             // Process children
             if (children.length > 0) {
-                const totalSize = children.reduce((sum, child) => sum + (child.size || 1), 0);
+                const totalSize = children.reduce((sum, child) => {
+                    const childData = child.data || child;
+                    return sum + (childData.size || 1);
+                }, 0);
                 const totalMinAngle = children.length * minAngleRad;
                 const availableAngle = Math.max(0, (endAngle - startAngle) - totalMinAngle);
                 
                 let currentAngle = startAngle;
                 children.forEach((child, i) => {
-                    const childSize = child.size || 1;
+                    const childData = child.data || child;
+                    const childSize = childData.size || 1;
                     const angleSpan = minAngleRad + (availableAngle * (childSize / totalSize));
                     const childEndAngle = currentAngle + angleSpan;
                     

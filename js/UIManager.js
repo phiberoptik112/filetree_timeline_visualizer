@@ -503,6 +503,24 @@ class UIManager {
         }
     }
     
+    // Update hover info panel
+    updateHoverInfo(content) {
+        const hoverInfo = document.getElementById('hover-info');
+        if (hoverInfo) {
+            hoverInfo.innerHTML = content;
+        } else {
+            console.error('hover-info element not found!');
+        }
+    }
+    
+    // Clear hover info panel
+    clearHoverInfo() {
+        const hoverInfo = document.getElementById('hover-info');
+        if (hoverInfo) {
+            hoverInfo.innerHTML = '<p style="opacity: 0.6; font-size: 12px;"><em>Hover over elements for details</em></p>';
+        }
+    }
+    
     // Cleanup
     dispose() {
         // Remove event listeners

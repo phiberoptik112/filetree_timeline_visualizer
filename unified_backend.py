@@ -381,6 +381,39 @@ class UnifiedTimelineGenerator:
                             metadata=asdict(milestone)
                         )
                         milestone_events.append(event)
+                    
+                    # Extract recommendation events if phrases are configured
+                    if self.recommendation_phrases:
+                        try:
+                            # Get email content for recommendation scanning
+                            if email_file.suffix.lower() == '.msg':
+                                if MSG_SUPPORT:
+                                    msg = extract_msg.Message(str(email_file))
+                                    content = f"{msg.subject or ''}\n\n{msg.body or ''}"
+                                    timestamp = msg.date.timestamp() if msg.date else datetime.now().timestamp()
+                                else:
+                                    continue
+                            elif email_file.suffix.lower() == '.eml':
+                                with open(email_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                    msg = email.message_from_file(f)
+                                    content = f"{msg.get('Subject', '')}\n\n{self._extract_email_body(msg)}"
+                                    try:
+                                        timestamp = email.utils.parsedate_to_datetime(msg.get('Date', '')).timestamp()
+                                    except:
+                                        timestamp = datetime.now().timestamp()
+                            elif email_file.suffix.lower() == '.txt':
+                                with open(email_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                    content = f.read()
+                                    timestamp = datetime.now().timestamp()
+                            
+                            # Extract recommendation events
+                            recommendation_events = self.extract_recommendations_from_text(
+                                content, str(email_file), timestamp
+                            )
+                            milestone_events.extend(recommendation_events)
+                            
+                        except Exception as e:
+                            print(f"Error extracting recommendations from {email_file}: {e}")
                         
                 except Exception as e:
                     print(f"Error processing {email_file}: {e}")
@@ -905,6 +938,17 @@ class UnifiedTimelineGenerator:
                                 metadata=asdict(milestone)
                             )
                             milestone_events.append(event)
+                        
+                        # Extract recommendation events if phrases are configured
+                        if self.recommendation_phrases:
+                            try:
+                                recommendation_events = self.extract_recommendations_from_text(
+                                    content, str(doc_file), datetime.now().timestamp()
+                                )
+                                milestone_events.extend(recommendation_events)
+                            except Exception as e:
+                                print(f"Error extracting recommendations from {doc_file}: {e}")
+                                
                 except Exception as e:
                     print(f"Error processing {doc_file}: {e}")
         
@@ -1202,11 +1246,15 @@ def main():
         action="store_true",
         help="Analyze correlations between file changes and milestones"
     )
+    parser.add_argument(
+        "--recommendation-config",
+        help="Path to config file containing recommendation phrases/keywords"
+    )
     
     args = parser.parse_args()
     
     try:
-        generator = UnifiedTimelineGenerator(args.db)
+        generator = UnifiedTimelineGenerator(args.db, args.recommendation_config)
         all_events = []
         
         # Scan directory if provided
