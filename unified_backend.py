@@ -887,6 +887,20 @@ class UnifiedTimelineGenerator:
                 'event_type': event[2],
                 'metadata': json.loads(event[3])
             }
+            # --- PATCH: Ensure 'children' property exists for all folders in file_scan events ---
+            if event_data['event_type'] == 'file_scan':
+                def ensure_children(node):
+                    if isinstance(node, dict):
+                        # If this is a folder node (has 'file_count' or 'children'), ensure 'children' exists
+                        if node.get('type') == 'folder' or 'children' in node:
+                            node.setdefault('children', [])
+                            for child in node['children']:
+                                ensure_children(child['data'] if 'data' in child else child)
+                    return node
+                tree = event_data['metadata'].get('tree_structure')
+                if tree:
+                    event_data['metadata']['tree_structure'] = ensure_children(tree)
+            # --- END PATCH ---
             export_data['events'].append(event_data)
         
         # Add correlations

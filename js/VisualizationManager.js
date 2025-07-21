@@ -74,6 +74,8 @@ class VisualizationManager {
         if (this.showConnections) {
             this.createConnectionVisualization(events);
         }
+        // Center camera after updating visualization
+        this.centerCameraOnVisualization();
     }
     
     // Clear all visualizations
@@ -133,6 +135,12 @@ class VisualizationManager {
     }
     
     createSunburstAtPosition(treeData, yPosition, eventIndex) {
+        if (!treeData || typeof treeData !== 'object') {
+            console.error('[Sunburst Error] Invalid treeData:', treeData, 'at eventIndex:', eventIndex);
+            return;
+        }
+        // Debug: Log the treeData structure to inspect how the sunburst is loaded from backend
+        console.log('[Sunburst Debug] treeData for event', eventIndex, treeData);
         const sunburstGroup = this.createSunburst(treeData, eventIndex);
         sunburstGroup.position.y = yPosition;
         sunburstGroup.rotation.x = Math.PI * 1.5; // 270 degrees
@@ -196,23 +204,24 @@ class VisualizationManager {
         
         // Recursive sunburst building
         const buildSunburst = (node, innerRadius, outerRadius, startAngle, endAngle, depth = 0, parentInfo = null, parentNode = null) => {
-            node.parent = parentNode;
-            
-            const children = node.children || [];
-            
-            const mesh = createRingSegment(node, innerRadius, outerRadius, startAngle, endAngle, depth);
+            // Always use .data if present (for both files and folders)
+            const nodeData = node.data || node;
+            nodeData.parent = parentNode;
+            const children = nodeData.children || [];
+
+            const mesh = createRingSegment(nodeData, innerRadius, outerRadius, startAngle, endAngle, depth);
             group.add(mesh);
-            
+
             // Store for interaction
-            this.segmentMeshes.set(node, mesh);
-            
+            this.segmentMeshes.set(nodeData, mesh);
+
             // Draw connection line to parent
             if (parentInfo) {
                 this.createSunburstConnection(parentInfo, {
-                    innerRadius, outerRadius, startAngle, endAngle, node
+                    innerRadius, outerRadius, startAngle, endAngle, node: nodeData
                 }, depth, group);
             }
-            
+
             // Process children
             if (children.length > 0) {
                 const totalSize = children.reduce((sum, child) => {
@@ -221,14 +230,14 @@ class VisualizationManager {
                 }, 0);
                 const totalMinAngle = children.length * minAngleRad;
                 const availableAngle = Math.max(0, (endAngle - startAngle) - totalMinAngle);
-                
+
                 let currentAngle = startAngle;
                 children.forEach((child, i) => {
                     const childData = child.data || child;
                     const childSize = childData.size || 1;
                     const angleSpan = minAngleRad + (availableAngle * (childSize / totalSize));
                     const childEndAngle = currentAngle + angleSpan;
-                    
+
                     buildSunburst(
                         child,
                         outerRadius + this.ringGap,
@@ -236,10 +245,10 @@ class VisualizationManager {
                         currentAngle,
                         childEndAngle,
                         depth + 1,
-                        { innerRadius, outerRadius, startAngle, endAngle, node },
-                        node
+                        { innerRadius, outerRadius, startAngle, endAngle, node: nodeData },
+                        nodeData
                     );
-                    
+
                     currentAngle = childEndAngle;
                 });
             }
@@ -658,6 +667,16 @@ class VisualizationManager {
         if (this.highlightedObjects) {
             this.highlightedObjects.clear();
         }
+    }
+
+    centerCameraOnVisualization() {
+        // Prefer sunburst if visible, else gantt
+        let group = this.showSunburst ? this.sunburstGroup : this.ganttGroup;
+        if (!group || group.children.length === 0) return;
+        // Compute bounding box
+        const box = new THREE.Box3().setFromObject(group);
+        const center = box.getCenter(new THREE.Vector3());
+        this.sceneManager.centerCameraOnObject(center);
     }
 }
 

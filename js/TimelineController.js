@@ -81,6 +81,7 @@ class TimelineController {
     // Timeline navigation
     setCurrentEvent(index) {
         const events = this.dataManager.getEvents();
+        console.log('[Debug] setCurrentEvent called with index:', index, 'Total events:', events.length);
         if (!events || index < 0 || index >= events.length) {
             console.warn('Invalid event index:', index);
             return;
@@ -145,9 +146,13 @@ class TimelineController {
     
     jumpToFileScanIndex(fileScanIndex) {
         const fileScanIndices = this.dataManager.getFileScanEventIndices();
+        console.log('[Debug] fileScanIndices:', fileScanIndices, 'Requested:', fileScanIndex);
         if (fileScanIndex >= 0 && fileScanIndex < fileScanIndices.length) {
             const eventIndex = fileScanIndices[fileScanIndex];
+            console.log('[Debug] Jumping to eventIndex:', eventIndex);
             this.setCurrentEvent(eventIndex);
+        } else {
+            console.warn('[Debug] Invalid fileScanIndex:', fileScanIndex);
         }
     }
     

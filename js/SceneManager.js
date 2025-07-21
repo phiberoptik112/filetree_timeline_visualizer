@@ -345,6 +345,31 @@ class SceneManager {
         return this.controls;
     }
     
+    centerCameraOnObject(objectOrPosition) {
+        let target;
+        if (objectOrPosition instanceof THREE.Object3D) {
+            // Compute bounding box center
+            const box = new THREE.Box3().setFromObject(objectOrPosition);
+            target = box.getCenter(new THREE.Vector3());
+        } else if (objectOrPosition instanceof THREE.Vector3) {
+            target = objectOrPosition.clone();
+        } else {
+            console.warn('centerCameraOnObject: Invalid argument');
+            return;
+        }
+        // Optionally move camera back to fit object (simple approach: keep current distance)
+        const direction = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+        const distance = direction.length();
+        direction.normalize();
+        this.camera.position.copy(target).add(direction.multiplyScalar(distance));
+        if (this.controls) {
+            this.controls.target.copy(target);
+            this.controls.update();
+        } else {
+            this.camera.lookAt(target);
+        }
+    }
+    
     dispose() {
         this.stopAnimation();
         

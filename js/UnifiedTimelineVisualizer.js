@@ -324,6 +324,13 @@ class UnifiedTimelineVisualizer {
         this.components.sceneManager.setCameraTarget(x, y, z);
     }
     
+    /**
+     * Center the camera on the main visualization (sunburst or gantt)
+     */
+    centerCameraOnVisualization() {
+        this.components.visualizationManager.centerCameraOnVisualization();
+    }
+    
     // Interaction methods
     clearSelection() {
         this.components.interactionManager.clearSelection();
